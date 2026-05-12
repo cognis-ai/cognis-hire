@@ -1,11 +1,11 @@
 "use server";
 
+import { cognisChat } from "@/lib/cognis-llm";
 import { SYSTEM_PROMPT, getInterviewAnalyticsPrompt } from "@/lib/prompts/analytics";
 import { InterviewService } from "@/services/interviews.service";
 import { ResponseService } from "@/services/responses.service";
 import type { Question } from "@/types/interview";
 import type { Analytics } from "@/types/response";
-import { OpenAI } from "openai";
 
 export const generateInterviewAnalytics = async (payload: {
   callId: string;
@@ -28,16 +28,10 @@ export const generateInterviewAnalytics = async (payload: {
       .map((q: Question, index: number) => `${index + 1}. ${q.question}`)
       .join("\n");
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      maxRetries: 5,
-      dangerouslyAllowBrowser: true,
-    });
-
     const prompt = getInterviewAnalyticsPrompt(interviewTranscript, mainInterviewQuestions);
 
-    const baseCompletion = await openai.chat.completions.create({
-      model: "gpt-4o",
+    const baseCompletion = await cognisChat({
+      model: "cognis-smart",
       messages: [
         {
           role: "system",
@@ -59,7 +53,7 @@ export const generateInterviewAnalytics = async (payload: {
 
     return { analytics: analyticsResponse, status: 200 };
   } catch (error) {
-    console.error("Error in OpenAI request:", error);
+    console.error("Error in Cognis LLM request:", error);
 
     return { error: "internal server error", status: 500 };
   }

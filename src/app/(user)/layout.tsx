@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "../globals.css";
 import Providers from "@/components/providers";
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 
@@ -9,15 +10,15 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
-  title: "FoloUp",
-  description: "AI powered Interviews",
+  title: COGNIS_BRAND.name,
+  description: COGNIS_BRAND.tagline,
   openGraph: {
-    title: "FoloUp",
-    description: "AI-powered Interviews",
-    siteName: "FoloUp",
+    title: COGNIS_BRAND.name,
+    description: COGNIS_BRAND.tagline,
+    siteName: COGNIS_BRAND.name,
     images: [
       {
-        url: "/foloup.png",
+        url: COGNIS_BRAND.thumbnailUrl,
         width: 800,
         height: 600,
       },

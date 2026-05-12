@@ -52,6 +52,7 @@
     "framer-motion": "^11.3.21",
     "fs": "^0.0.1-security",
     "init": "^0.1.2",
+    "jose": "^5.9.0",
     "langchain": "^0.1.4",
     "lucide-react": "^0.294.0",
     "marked": "^13.0.3",

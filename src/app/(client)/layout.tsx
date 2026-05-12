@@ -4,6 +4,7 @@ import "../globals.css";
 import Navbar from "@/components/navbar";
 import Providers from "@/components/providers";
 import SideMenu from "@/components/sideMenu";
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import { cn } from "@/lib/utils";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Inter } from "next/font/google";
@@ -13,15 +14,15 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
 
 const metadata = {
-  title: "FoloUp",
-  description: " AI-powered Interviews",
+  title: COGNIS_BRAND.name,
+  description: COGNIS_BRAND.tagline,
   openGraph: {
-    title: "FoloUp",
-    description: "AI-powered Interviews",
-    siteName: "FoloUp",
+    title: COGNIS_BRAND.name,
+    description: COGNIS_BRAND.tagline,
+    siteName: COGNIS_BRAND.name,
     images: [
       {
-        url: "/foloup.png",
+        url: COGNIS_BRAND.thumbnailUrl,
         width: 800,
         height: 600,
       },
