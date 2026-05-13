@@ -24,7 +24,7 @@ import { getOrganizationById } from "@/services/clients.service";
 import { updateInterview } from "@/services/interviews.service";
 import { getAllResponses, saveResponse } from "@/services/responses.service";
 import type { Interview } from "@/types/interview";
-import type { Analytics, Response } from "@/types/response";
+import type { Analytics, CallDetails, Response } from "@/types/response";
 
 // Prisma → legacy `Response` shape. Downstream components and templates
 // consume snake_case keys (call_id, candidate_status, is_viewed, ...), so
@@ -55,12 +55,17 @@ function toLegacyResponse(row: PrismaResponse): Response {
     interview_id: row.interviewId ?? "",
     duration: row.duration ?? 0,
     call_id: row.callId ?? "",
-    details: row.details,
+    // `row.details`/`row.analytics` are Postgres JSON (typed as `unknown`).
+    // The downstream Response consumers in this app read narrowly-typed
+    // fields via optional chaining, so we narrow at this boundary. The
+    // cast is the single place where the JSON column is asserted to match
+    // the Zod-derived shape — if drift happens, the boundary fails here.
+    details: (row.details ?? null) as CallDetails | null,
     is_analysed: row.isAnalysed ?? false,
     email: row.email ?? "",
     is_ended: row.isEnded ?? false,
     is_viewed: row.isViewed ?? false,
-    analytics: row.analytics as Analytics,
+    analytics: (row.analytics ?? null) as Analytics | null,
     candidate_status: row.candidateStatus ?? "",
     tab_switch_count: row.tabSwitchCount ?? 0,
   };
