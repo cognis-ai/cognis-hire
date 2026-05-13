@@ -152,7 +152,7 @@ function Interviews() {
                       </div>
                     </div>
                     <p className="text-l text-center">
-                      Contact <span className="font-semibold">founders@folo-up.co</span> to upgrade
+                      Contact <span className="font-semibold">hello@cognisai.com</span> to upgrade
                       your plan.
                     </p>
                   </div>

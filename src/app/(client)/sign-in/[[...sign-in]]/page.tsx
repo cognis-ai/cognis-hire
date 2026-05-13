@@ -1,6 +1,12 @@
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import { SignIn } from "@clerk/nextjs";
 
 function SignInPage() {
+  // Split the brand name so the second word picks up the accent colour the
+  // way the upstream "FoloUp" wordmark did (e.g. "Cognis Hire" → "Cognis" + "Hire").
+  const [head, ...rest] = COGNIS_BRAND.name.split(" ");
+  const tail = rest.join(" ");
+
   return (
     <div className="flex items-center justify-center h-screen w-full bg-white absolute top-0 left-0 z-50">
       <div className="hidden md:block align-middle my-auto mx-auto">
@@ -8,13 +14,14 @@ function SignInPage() {
       </div>
       <div className="block md:hidden px-3 h-[60%] my-auto">
         <h1 className="text-2xl font-bold text-center text-gray-800">
-          Welcome to Folo<span className="text-indigo-600">Up</span>
+          Welcome to {head}
+          {tail ? <span className="text-indigo-600">{` ${tail}`}</span> : null}
         </h1>
         <h1 className="text-md my-3 text-center text-gray-800">
-          Mobile version is currently under construction. 🚧
+          {COGNIS_BRAND.name} works best on a desktop browser.
         </h1>
         <p className="text-center text-gray-600 mt-3">
-          Please sign in using a PC for the best experience. Sorry for the inconvenience.
+          Sign in from a desktop to set up interviews, review candidates, and listen back to calls.
         </p>
       </div>
     </div>

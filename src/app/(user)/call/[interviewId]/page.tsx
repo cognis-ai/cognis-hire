@@ -3,6 +3,7 @@
 import Call from "@/components/call";
 import LoaderWithText from "@/components/loaders/loader-with-text/loaderWithText";
 import { useInterviews } from "@/contexts/interviews.context";
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import type { Interview } from "@/types/interview";
 import { ArrowUpRightSquareIcon } from "lucide-react";
 import Image from "next/image";
@@ -20,6 +21,38 @@ type PopupProps = {
   image: string;
 };
 
+// Renders the brand wordmark with the second word in the accent colour
+// (matches the upstream "Folo + Up" two-tone treatment for "Cognis Hire").
+function BrandWordmark() {
+  const [head, ...rest] = COGNIS_BRAND.name.split(" ");
+  const tail = rest.join(" ");
+  return (
+    <>
+      {head}
+      {tail ? <span className="text-indigo-600">{` ${tail}`}</span> : null}
+    </>
+  );
+}
+
+function PoweredByBrand() {
+  return (
+    <a
+      className="flex flex-row justify-center align-middle mt-3"
+      href={COGNIS_BRAND.marketingUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <div className="text-center text-md font-semibold mr-2">
+        Powered by{" "}
+        <span className="font-bold">
+          <BrandWordmark />
+        </span>
+      </div>
+      <ArrowUpRightSquareIcon className="h-[1.5rem] w-[1.5rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-indigo-500" />
+    </a>
+  );
+}
+
 function PopupLoader() {
   return (
     <div className="bg-white rounded-md absolute -translate-x-1/2 -translate-y-1/2 top-1/2 left-1/2 md:w-[80%] w-[90%]">
@@ -28,20 +61,7 @@ function PopupLoader() {
           <LoaderWithText />
         </div>
       </div>
-      <a
-        className="flex flex-row justify-center align-middle mt-3"
-        href="https://folo-up.co/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <div className="text-center text-md font-semibold mr-2">
-          Powered by{" "}
-          <span className="font-bold">
-            Folo<span className="text-indigo-600">Up</span>
-          </span>
-        </div>
-        <ArrowUpRightSquareIcon className="h-[1.5rem] w-[1.5rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-indigo-500" />
-      </a>
+      <PoweredByBrand />
     </div>
   );
 }
@@ -56,20 +76,7 @@ function PopUpMessage({ title, description, image }: PopupProps) {
           <p>{description}</p>
         </div>
       </div>
-      <a
-        className="flex flex-row justify-center align-middle mt-3"
-        href="https://folo-up.co/"
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        <div className="text-center text-md font-semibold mr-2">
-          Powered by{" "}
-          <span className="font-bold">
-            Folo<span className="text-indigo-600">Up</span>
-          </span>
-        </div>
-        <ArrowUpRightSquareIcon className="h-[1.5rem] w-[1.5rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-indigo-500" />
-      </a>
+      <PoweredByBrand />
     </div>
   );
 }
@@ -132,13 +139,18 @@ function InterviewInterface({ params }: Props) {
         <div className="mt-48 px-3">
           <p className="text-center my-5 text-md font-semibold">{interview?.name}</p>
           <p className="text-center text-gray-600 my-5">
-            Please use a PC to respond to the interview. Apologies for any inconvenience caused.{" "}
+            This interview runs in a desktop browser. Please switch to a computer to continue.
           </p>
         </div>
         <div className="text-center text-md font-semibold mr-2 my-5">
           Powered by{" "}
-          <a className="font-bold underline" href="www.folo-up.co" target="_blank" rel="noreferrer">
-            Folo<span className="text-indigo-600">Up</span>
+          <a
+            className="font-bold underline"
+            href={COGNIS_BRAND.marketingUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <BrandWordmark />
           </a>
         </div>
       </div>

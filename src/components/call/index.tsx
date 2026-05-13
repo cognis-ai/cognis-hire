@@ -13,6 +13,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useResponses } from "@/contexts/responses.context";
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import { isLightColor, testEmail } from "@/lib/utils";
 import { submitFeedback } from "@/services/feedback.service";
 import { getInterviewer } from "@/services/interviewers.service";
@@ -49,6 +50,19 @@ type transcriptType = {
   role: string;
   content: string;
 };
+
+// Renders the brand wordmark with the second word in the accent colour
+// (matches the upstream "Folo + Up" two-tone treatment for "Cognis Hire").
+function BrandWordmark() {
+  const [head, ...rest] = COGNIS_BRAND.name.split(" ");
+  const tail = rest.join(" ");
+  return (
+    <>
+      {head}
+      {tail ? <span className="text-indigo-600">{` ${tail}`}</span> : null}
+    </>
+  );
+}
 
 function Call({ interview }: InterviewProps) {
   const { createResponse } = useResponses();
@@ -531,14 +545,14 @@ function Call({ interview }: InterviewProps) {
         </Card>
         <a
           className="flex flex-row justify-center align-middle mt-3"
-          href="https://folo-up.co/"
+          href={COGNIS_BRAND.marketingUrl}
           target="_blank"
           rel="noreferrer"
         >
           <div className="text-center text-md font-semibold mr-2  ">
             Powered by{" "}
             <span className="font-bold">
-              Folo<span className="text-indigo-600">Up</span>
+              <BrandWordmark />
             </span>
           </div>
           <ArrowUpRightSquareIcon className="h-[1.5rem] w-[1.5rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0 text-indigo-500 " />

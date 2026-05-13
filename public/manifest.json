@@ -1,0 +1,16 @@
+{
+  "name": "Cognis Hire",
+  "short_name": "Cognis Hire",
+  "description": "AI worker that screens candidates 24/7 without scheduling calls.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "/browser-client-icon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

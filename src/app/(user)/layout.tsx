@@ -37,6 +37,8 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="icon" href="/browser-user-icon.ico" />
+        {/* TODO(W5.1): swap to /brand-assets/cognis-icon.svg once design lands. */}
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className={inter.className}>
         <ClerkProvider dynamic>

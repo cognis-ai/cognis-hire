@@ -46,6 +46,8 @@ export default function RootLayout({
         <title>{metadata.title}</title>
         <meta name="description" content={metadata.description} />
         <link rel="icon" href="/browser-client-icon.ico" />
+        {/* TODO(W5.1): swap to /brand-assets/cognis-icon.svg once design lands. */}
+        <link rel="manifest" href="/manifest.json" />
       </head>
       <body className={cn(inter.className, "antialiased overflow-hidden min-h-screen")}>
         <ClerkProvider
