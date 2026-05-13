@@ -5,6 +5,7 @@ import CreateInterviewCard from "@/components/dashboard/interview/createIntervie
 import InterviewCard from "@/components/dashboard/interview/interviewCard";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useInterviews } from "@/contexts/interviews.context";
+import { COGNIS_BRAND } from "@/lib/cognis-brand";
 import { getOrganizationById, updateOrganization } from "@/services/clients.service";
 import { deactivateInterviewsByOrgId } from "@/services/interviews.service";
 import { getResponseCountByOrganizationId } from "@/services/responses.service";
@@ -152,8 +153,8 @@ function Interviews() {
                       </div>
                     </div>
                     <p className="text-l text-center">
-                      Contact <span className="font-semibold">hello@cognisai.com</span> to upgrade
-                      your plan.
+                      Contact <span className="font-semibold">{COGNIS_BRAND.supportEmail}</span> to
+                      upgrade your plan.
                     </p>
                   </div>
                 </Modal>

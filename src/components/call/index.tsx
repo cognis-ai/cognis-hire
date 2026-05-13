@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandWordmark } from "@/components/brand-wordmark";
 import { FeedbackForm } from "@/components/call/feedbackForm";
 import {
   AlertDialog,
@@ -50,19 +51,6 @@ type transcriptType = {
   role: string;
   content: string;
 };
-
-// Renders the brand wordmark with the second word in the accent colour
-// (matches the upstream "Folo + Up" two-tone treatment for "Cognis Hire").
-function BrandWordmark() {
-  const [head, ...rest] = COGNIS_BRAND.name.split(" ");
-  const tail = rest.join(" ");
-  return (
-    <>
-      {head}
-      {tail ? <span className="text-indigo-600">{` ${tail}`}</span> : null}
-    </>
-  );
-}
 
 function Call({ interview }: InterviewProps) {
   const { createResponse } = useResponses();

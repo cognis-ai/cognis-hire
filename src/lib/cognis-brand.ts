@@ -16,7 +16,13 @@ export const COGNIS_BRAND = {
   // design system lands (cognis-landing page is currently the source of truth).
   primaryColor: process.env.NEXT_PUBLIC_BRAND_PRIMARY ?? "#4F46E5",
   marketingUrl: "https://cognisai.com",
-  tagline: "AI-powered Interviews",
+  // Customer-facing tagline. Matches Cognis Hire positioning in
+  // phase-2-hire.md and public/manifest.json description.
+  tagline:
+    process.env.NEXT_PUBLIC_BRAND_TAGLINE ??
+    "AI worker that screens candidates 24/7 without scheduling calls.",
+  // Contact address surfaced in customer-facing copy (e.g. upgrade modal).
+  supportEmail: process.env.NEXT_PUBLIC_BRAND_SUPPORT_EMAIL ?? "hello@cognisai.com",
 } as const;
 
 export type CognisBrand = typeof COGNIS_BRAND;

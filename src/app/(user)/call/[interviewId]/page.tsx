@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandWordmark } from "@/components/brand-wordmark";
 import Call from "@/components/call";
 import LoaderWithText from "@/components/loaders/loader-with-text/loaderWithText";
 import { useInterviews } from "@/contexts/interviews.context";
@@ -20,19 +21,6 @@ type PopupProps = {
   description: string;
   image: string;
 };
-
-// Renders the brand wordmark with the second word in the accent colour
-// (matches the upstream "Folo + Up" two-tone treatment for "Cognis Hire").
-function BrandWordmark() {
-  const [head, ...rest] = COGNIS_BRAND.name.split(" ");
-  const tail = rest.join(" ");
-  return (
-    <>
-      {head}
-      {tail ? <span className="text-indigo-600">{` ${tail}`}</span> : null}
-    </>
-  );
-}
 
 function PoweredByBrand() {
   return (
