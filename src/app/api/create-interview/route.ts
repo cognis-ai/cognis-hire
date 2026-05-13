@@ -1,5 +1,5 @@
 import { logger } from "@/lib/logger";
-import { InterviewService } from "@/services/interviews.service";
+import { createInterview } from "@/services/interviews.service";
 import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
 
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       readableSlug = `${orgNameSlug}-${interviewNameSlug}`;
     }
 
-    const newInterview = await InterviewService.createInterview({
+    const newInterview = await createInterview({
       ...payload,
       url: url,
       id: url_id,

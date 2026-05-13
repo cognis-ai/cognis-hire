@@ -2,8 +2,8 @@
 
 import { cognisChat } from "@/lib/cognis-llm";
 import { SYSTEM_PROMPT, getInterviewAnalyticsPrompt } from "@/lib/prompts/analytics";
-import { InterviewService } from "@/services/interviews.service";
-import { ResponseService } from "@/services/responses.service";
+import { getInterviewById } from "@/services/interviews.service";
+import { getResponseByCallId } from "@/services/responses.service";
 import type { Question } from "@/types/interview";
 import type { Analytics } from "@/types/response";
 
@@ -15,15 +15,25 @@ export const generateInterviewAnalytics = async (payload: {
   const { callId, interviewId, transcript } = payload;
 
   try {
-    const response = await ResponseService.getResponseByCallId(callId);
-    const interview = await InterviewService.getInterviewById(interviewId);
+    const response = await getResponseByCallId(callId);
+    const interview = await getInterviewById(interviewId);
 
-    if (response.analytics) {
-      return { analytics: response.analytics as Analytics, status: 200 };
+    if (response?.analytics) {
+      return { analytics: response.analytics as unknown as Analytics, status: 200 };
     }
 
-    const interviewTranscript = transcript || response.details?.transcript;
-    const questions = interview?.questions || [];
+    // `details` is JSON from Postgres; narrow before reading transcript.
+    const details =
+      response && typeof response.details === "object" && response.details !== null
+        ? (response.details as { transcript?: string })
+        : null;
+    const interviewTranscript = transcript || details?.transcript || "";
+    // `interview.questions` is JSON from Postgres → narrow to Question[] for
+    // template-rendering. The legacy upstream stored an array of objects
+    // shaped like Question; preserve that contract.
+    const questions: Question[] = Array.isArray(interview?.questions)
+      ? (interview?.questions as unknown as Question[])
+      : [];
     const mainInterviewQuestions = questions
       .map((q: Question, index: number) => `${index + 1}. ${q.question}`)
       .join("\n");

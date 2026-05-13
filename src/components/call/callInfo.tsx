@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CandidateStatus } from "@/lib/enum";
-import { ResponseService } from "@/services/responses.service";
+import { deleteResponse, getResponseByCallId, updateResponse } from "@/services/responses.service";
 import type { Analytics, CallData } from "@/types/response";
 import { CircularProgress } from "@nextui-org/react";
 import { ScrollArea } from "@radix-ui/react-scroll-area";
@@ -82,12 +82,14 @@ function CallInfo({ call_id, onDeleteResponse, onCandidateStatusChange }: CallPr
     const fetchEmail = async () => {
       setIsLoading(true);
       try {
-        const response = await ResponseService.getResponseByCallId(call_id);
-        setEmail(response.email);
-        setName(response.name);
-        setCandidateStatus(response.candidate_status);
-        setInterviewId(response.interview_id);
-        setTabSwitchCount(response.tab_switch_count);
+        const response = await getResponseByCallId(call_id);
+        if (response) {
+          setEmail(response.email ?? "");
+          setName(response.name ?? "");
+          setCandidateStatus(response.candidateStatus ?? "");
+          setInterviewId(response.interviewId ?? "");
+          setTabSwitchCount(response.tabSwitchCount ?? undefined);
+        }
       } catch (error) {
         console.error(error);
       } finally {
@@ -122,12 +124,12 @@ function CallInfo({ call_id, onDeleteResponse, onCandidateStatusChange }: CallPr
 
   const onDeleteResponseClick = async () => {
     try {
-      const response = await ResponseService.getResponseByCallId(call_id);
+      const response = await getResponseByCallId(call_id);
 
       if (response) {
-        const interview_id = response.interview_id;
+        const interview_id = response.interviewId;
 
-        await ResponseService.deleteResponse(call_id);
+        await deleteResponse(call_id);
 
         router.push(`/interviews/${interview_id}`);
 
@@ -198,10 +200,7 @@ function CallInfo({ call_id, onDeleteResponse, onCandidateStatusChange }: CallPr
                       value={candidateStatus}
                       onValueChange={async (newValue: string) => {
                         setCandidateStatus(newValue);
-                        await ResponseService.updateResponse(
-                          { candidate_status: newValue },
-                          call_id,
-                        );
+                        await updateResponse({ candidate_status: newValue }, call_id);
                         onCandidateStatusChange(call_id, newValue);
                       }}
                     >

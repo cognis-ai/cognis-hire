@@ -5,9 +5,9 @@ import CreateInterviewCard from "@/components/dashboard/interview/createIntervie
 import InterviewCard from "@/components/dashboard/interview/interviewCard";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
 import { useInterviews } from "@/contexts/interviews.context";
-import { ClientService } from "@/services/clients.service";
-import { InterviewService } from "@/services/interviews.service";
-import { ResponseService } from "@/services/responses.service";
+import { getOrganizationById, updateOrganization } from "@/services/clients.service";
+import { deactivateInterviewsByOrgId } from "@/services/interviews.service";
+import { getResponseCountByOrganizationId } from "@/services/responses.service";
 import { useOrganization } from "@clerk/nextjs";
 import { Gem, Plus } from "lucide-react";
 import Image from "next/image";
@@ -37,15 +37,19 @@ function Interviews() {
     const fetchOrganizationData = async () => {
       try {
         if (organization?.id) {
-          const data = await ClientService.getOrganizationById(organization.id);
-          if (data?.plan) {
-            setCurrentPlan(data.plan);
-            if (data.plan === "free_trial_over") {
-              setIsModalOpen(true);
+          const data = await getOrganizationById(organization.id);
+          // Service returns Organization | null | [] (error). Narrow out the
+          // array form before reading row fields.
+          if (data && !Array.isArray(data)) {
+            if (data.plan) {
+              setCurrentPlan(data.plan);
+              if (data.plan === "free_trial_over") {
+                setIsModalOpen(true);
+              }
             }
-          }
-          if (data?.allowed_responses_count) {
-            setAllowedResponsesCount(data.allowed_responses_count);
+            if (data.allowedResponsesCount) {
+              setAllowedResponsesCount(data.allowedResponsesCount);
+            }
           }
         }
       } catch (error) {
@@ -64,14 +68,12 @@ function Interviews() {
 
       setLoading(true);
       try {
-        const totalResponses = await ResponseService.getResponseCountByOrganizationId(
-          organization.id,
-        );
+        const totalResponses = await getResponseCountByOrganizationId(organization.id);
         const hasExceededLimit = totalResponses >= allowedResponsesCount;
         if (hasExceededLimit) {
           setCurrentPlan("free_trial_over");
-          await InterviewService.deactivateInterviewsByOrgId(organization.id);
-          await ClientService.updateOrganization({ plan: "free_trial_over" }, organization.id);
+          await deactivateInterviewsByOrgId(organization.id);
+          await updateOrganization({ plan: "free_trial_over" }, organization.id);
         }
       } catch (error) {
         console.error("Error fetching responses:", error);

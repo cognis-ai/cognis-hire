@@ -2,23 +2,17 @@
 //
 // Body: { organization_id, templates: [{ role, description, questions: [...] }] }
 // Returns { created, failures } counts. Idempotent on (organization_id, role)
-// via the unique constraint added in the cognis_admin migration — re-runs
-// upsert the existing row instead of erroring.
+// via the unique constraint on the interview_template table — re-runs upsert
+// the existing row instead of erroring.
 
-import { getAdminSupabase, requireAdminAuth } from "@/lib/cognis-admin";
+import {
+  type BulkInterviewTemplatesResponse,
+  bulkInterviewTemplatesBodySchema,
+} from "@/lib/admin-schemas";
+import { requireAdminAuth } from "@/lib/cognis-admin";
 import { logger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { type NextRequest, NextResponse } from "next/server";
-
-interface TemplateItem {
-  role?: string;
-  description?: string;
-  questions?: unknown[];
-}
-
-interface BulkBody {
-  organization_id?: string;
-  templates?: TemplateItem[];
-}
 
 export async function POST(req: NextRequest) {
   const auth = requireAdminAuth(req);
@@ -26,48 +20,58 @@ export async function POST(req: NextRequest) {
     return auth;
   }
 
-  let body: BulkBody;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as BulkBody;
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json body" }, { status: 400 });
   }
 
-  if (!body.organization_id || !Array.isArray(body.templates)) {
+  const parsed = bulkInterviewTemplatesBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "organization_id and templates[] are required" },
+      {
+        error: "organization_id and templates[] are required",
+        details: parsed.error.flatten(),
+      },
       { status: 400 },
     );
   }
 
-  const supabase = getAdminSupabase();
+  const body = parsed.data;
   let created = 0;
   let failures = 0;
 
   for (const t of body.templates) {
-    if (!t.role) {
-      failures += 1;
-      continue;
-    }
-
-    const { error } = await supabase.from("interview_template").upsert(
-      {
-        organization_id: body.organization_id,
-        role: t.role,
-        description: t.description ?? null,
-        questions: t.questions ?? [],
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "organization_id,role" },
-    );
-
-    if (error) {
-      logger.error(`template upsert failed for role=${t.role}: ${error.message}`);
-      failures += 1;
-    } else {
+    try {
+      await prisma.interviewTemplate.upsert({
+        where: {
+          organizationId_role: {
+            organizationId: body.organization_id,
+            role: t.role,
+          },
+        },
+        create: {
+          organizationId: body.organization_id,
+          role: t.role,
+          description: t.description ?? null,
+          // Prisma's Json input rejects `undefined`; default to an empty array.
+          questions: (t.questions ?? []) as object,
+        },
+        update: {
+          description: t.description ?? null,
+          questions: (t.questions ?? []) as object,
+          updatedAt: new Date(),
+        },
+      });
       created += 1;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "unknown error";
+      logger.error(`template upsert failed for role=${t.role}: ${message}`);
+      failures += 1;
     }
   }
 
-  return NextResponse.json({ created, failures }, { status: 200 });
+  const payload: BulkInterviewTemplatesResponse = { created, failures };
+  return NextResponse.json(payload, { status: 200 });
 }

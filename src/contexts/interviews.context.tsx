@@ -1,6 +1,9 @@
 "use client";
 
-import { InterviewService } from "@/services/interviews.service";
+import {
+  getAllInterviews,
+  getInterviewById as getInterviewByIdService,
+} from "@/services/interviews.service";
 import type { Interview } from "@/types/interview";
 import { useClerk, useOrganization } from "@clerk/nextjs";
 import React, { useState, useContext, type ReactNode, useEffect } from "react";
@@ -8,7 +11,7 @@ import React, { useState, useContext, type ReactNode, useEffect } from "react";
 interface InterviewContextProps {
   interviews: Interview[];
   setInterviews: React.Dispatch<React.SetStateAction<Interview[]>>;
-  getInterviewById: (interviewId: string) => Interview | null | any;
+  getInterviewById: (interviewId: string) => Promise<Interview | null>;
   interviewsLoading: boolean;
   setInterviewsLoading: (interviewsLoading: boolean) => void;
   fetchInterviews: () => void;
@@ -17,7 +20,7 @@ interface InterviewContextProps {
 export const InterviewContext = React.createContext<InterviewContextProps>({
   interviews: [],
   setInterviews: () => {},
-  getInterviewById: () => null,
+  getInterviewById: async () => null,
   setInterviewsLoading: () => undefined,
   interviewsLoading: false,
   fetchInterviews: () => {},
@@ -36,12 +39,15 @@ export function InterviewProvider({ children }: InterviewProviderProps) {
   const fetchInterviews = async () => {
     try {
       setInterviewsLoading(true);
-      const response = await InterviewService.getAllInterviews(
-        user?.id as string,
-        organization?.id as string,
-      );
+      const response = await getAllInterviews(user?.id as string, organization?.id as string);
       setInterviewsLoading(false);
-      setInterviews(response);
+      // Prisma returns camelCase rows; the legacy `Interview` type uses
+      // snake_case keys. Downstream consumers (interviewCard, dashboard, ...)
+      // index into the data with both shapes — keep the runtime payload as
+      // Prisma emits it for now and cast at the boundary. A future cleanup
+      // can either tighten the `Interview` type or move components onto
+      // camelCase wholesale.
+      setInterviews(response as unknown as Interview[]);
     } catch (error) {
       console.error(error);
     }
@@ -49,9 +55,9 @@ export function InterviewProvider({ children }: InterviewProviderProps) {
   };
 
   const getInterviewById = async (interviewId: string) => {
-    const response = await InterviewService.getInterviewById(interviewId);
+    const response = await getInterviewByIdService(interviewId);
 
-    return response;
+    return response as unknown as Interview | null;
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>

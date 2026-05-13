@@ -1,128 +1,208 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+"use server";
 
-const supabase = createClientComponentClient();
+// Response data-access (Prisma).
+//
+// Functions are exported as Server Actions so that "use client" contexts and
+// components can call them directly — Next.js handles the RPC transport.
+// Server-side callers (API routes, other server actions) import them like
+// normal async functions and skip the RPC roundtrip.
 
-const createResponse = async (payload: any) => {
-  const { error, data } = await supabase
-    .from("response")
-    .insert({ ...payload })
-    .select("id");
+import { logger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
-  if (error) {
-    console.log(error);
+// Legacy callsites build snake_case payloads such as
+// `{ interview_id, call_id, email, name, is_viewed, is_ended, is_analysed,
+//   candidate_status, tab_switch_count, details, analytics, duration }`.
+// We accept that shape and translate to Prisma's camelCase create/update
+// input below. Per project directive, no `any`.
+type LegacyResponsePayload = Record<string, unknown>;
 
-    return [];
-  }
+function toPrismaResponseCreateData(
+  payload: LegacyResponsePayload,
+): Prisma.ResponseUncheckedCreateInput {
+  const {
+    interview_id,
+    interviewId,
+    name,
+    email,
+    call_id,
+    callId,
+    candidate_status,
+    candidateStatus,
+    duration,
+    details,
+    analytics,
+    is_analysed,
+    isAnalysed,
+    is_ended,
+    isEnded,
+    is_viewed,
+    isViewed,
+    tab_switch_count,
+    tabSwitchCount,
+    ...rest
+  } = payload;
 
-  return data[0]?.id;
-};
+  // Defensive: ensure the autoincrement primary key isn't clobbered by rest.
+  const { id: _restId, ...restWithoutId } = rest as { id?: unknown } & Record<string, unknown>;
 
-const saveResponse = async (payload: any, call_id: string) => {
-  const { error, data } = await supabase
-    .from("response")
-    .update({ ...payload })
-    .eq("call_id", call_id);
-  if (error) {
-    console.log(error);
+  return {
+    ...(restWithoutId as Prisma.ResponseUncheckedCreateInput),
+    interviewId: ((interviewId as string | undefined) ?? (interview_id as string | undefined)) as
+      | string
+      | undefined,
+    name: (name as string | null | undefined) ?? undefined,
+    email: (email as string | null | undefined) ?? undefined,
+    callId: ((callId as string | undefined) ?? (call_id as string | undefined)) as
+      | string
+      | undefined,
+    candidateStatus: ((candidateStatus as string | undefined) ??
+      (candidate_status as string | undefined)) as string | undefined,
+    duration: (duration as number | undefined) ?? undefined,
+    details: (details as Prisma.InputJsonValue | undefined) ?? undefined,
+    analytics: (analytics as Prisma.InputJsonValue | undefined) ?? undefined,
+    isAnalysed: ((isAnalysed as boolean | undefined) ?? (is_analysed as boolean | undefined)) as
+      | boolean
+      | undefined,
+    isEnded: ((isEnded as boolean | undefined) ?? (is_ended as boolean | undefined)) as
+      | boolean
+      | undefined,
+    isViewed: ((isViewed as boolean | undefined) ?? (is_viewed as boolean | undefined)) as
+      | boolean
+      | undefined,
+    tabSwitchCount: ((tabSwitchCount as number | undefined) ??
+      (tab_switch_count as number | undefined)) as number | undefined,
+  };
+}
 
-    return [];
-  }
+function toPrismaResponseUpdateData(
+  payload: LegacyResponsePayload,
+): Prisma.ResponseUncheckedUpdateInput {
+  // Reuse the create-mapper. Prisma ignores undefined values on update so the
+  // create-shape doubles as a partial-update shape.
+  const data = toPrismaResponseCreateData(payload);
+  // biome-ignore lint/performance/noDelete: dropping any stray id off the patch
+  delete (data as Record<string, unknown>).id;
 
   return data;
-};
+}
 
-const getAllResponses = async (interviewId: string) => {
+export async function createResponse(payload: LegacyResponsePayload) {
   try {
-    const { data, error } = await supabase
-      .from("response")
-      .select("*")
-      .eq("interview_id", interviewId)
-      .or("details.is.null, details->call_analysis.not.is.null")
-      .eq("is_ended", true)
-      .order("created_at", { ascending: false });
+    const row = await prisma.response.create({
+      data: toPrismaResponseCreateData(payload),
+      select: { id: true },
+    });
 
-    return data || [];
+    return row.id;
   } catch (error) {
-    console.log(error);
+    logger.error(`createResponse failed: ${(error as Error).message}`);
 
     return [];
   }
-};
+}
 
-const getResponseCountByOrganizationId = async (organizationId: string): Promise<number> => {
+export async function saveResponse(payload: LegacyResponsePayload, call_id: string) {
   try {
-    const { count, error } = await supabase
-      .from("interview")
-      .select("response(id)", { count: "exact", head: true }) // join + count
-      .eq("organization_id", organizationId);
-
-    return count ?? 0;
+    return await prisma.response.updateMany({
+      where: { callId: call_id },
+      data: toPrismaResponseUpdateData(payload),
+    });
   } catch (error) {
-    console.log(error);
+    logger.error(`saveResponse failed: ${(error as Error).message}`);
+
+    return [];
+  }
+}
+
+export async function updateResponse(payload: LegacyResponsePayload, call_id: string) {
+  try {
+    return await prisma.response.updateMany({
+      where: { callId: call_id },
+      data: toPrismaResponseUpdateData(payload),
+    });
+  } catch (error) {
+    logger.error(`updateResponse failed: ${(error as Error).message}`);
+
+    return [];
+  }
+}
+
+export async function getAllResponses(interviewId: string) {
+  try {
+    // Upstream filter: response rows for the interview where the call is
+    // ended AND (details is null OR details->call_analysis is not null).
+    // Translates to Prisma: isEnded = true AND (details IS NULL OR
+    // details ? 'call_analysis').
+    return await prisma.response.findMany({
+      where: {
+        interviewId,
+        isEnded: true,
+        OR: [
+          { details: { equals: Prisma.DbNull } },
+          {
+            details: {
+              path: ["call_analysis"],
+              not: Prisma.DbNull,
+            },
+          },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (error) {
+    logger.error(`getAllResponses failed: ${(error as Error).message}`);
+
+    return [];
+  }
+}
+
+export async function getResponseCountByOrganizationId(organizationId: string): Promise<number> {
+  try {
+    // Counts responses across every interview belonging to the org.
+    // Upstream's Supabase call did a nested-relation count on the
+    // `interview` table; the user-facing intent is the total responses for
+    // the org, which is what this expresses cleanly in Prisma.
+    return await prisma.response.count({
+      where: { interview: { organizationId } },
+    });
+  } catch (error) {
+    logger.error(`getResponseCountByOrganizationId failed: ${(error as Error).message}`);
 
     return 0;
   }
-};
+}
 
-const getAllEmailAddressesForInterview = async (interviewId: string) => {
+export async function getAllEmails(interviewId: string) {
   try {
-    const { data, error } = await supabase
-      .from("response")
-      .select("email")
-      .eq("interview_id", interviewId);
-
-    return data || [];
+    return await prisma.response.findMany({
+      where: { interviewId },
+      select: { email: true },
+    });
   } catch (error) {
-    console.log(error);
+    logger.error(`getAllEmails failed: ${(error as Error).message}`);
 
     return [];
   }
-};
+}
 
-const getResponseByCallId = async (id: string) => {
+export async function getResponseByCallId(id: string) {
   try {
-    const { data, error } = await supabase.from("response").select("*").filter("call_id", "eq", id);
-
-    return data ? data[0] : null;
+    return await prisma.response.findFirst({ where: { callId: id } });
   } catch (error) {
-    console.log(error);
+    logger.error(`getResponseByCallId failed: ${(error as Error).message}`);
+
+    return null;
+  }
+}
+
+export async function deleteResponse(id: string) {
+  try {
+    return await prisma.response.deleteMany({ where: { callId: id } });
+  } catch (error) {
+    logger.error(`deleteResponse failed: ${(error as Error).message}`);
 
     return [];
   }
-};
-
-const deleteResponse = async (id: string) => {
-  const { error, data } = await supabase.from("response").delete().eq("call_id", id);
-  if (error) {
-    console.log(error);
-
-    return [];
-  }
-
-  return data;
-};
-
-const updateResponse = async (payload: any, call_id: string) => {
-  const { error, data } = await supabase
-    .from("response")
-    .update({ ...payload })
-    .eq("call_id", call_id);
-  if (error) {
-    console.log(error);
-
-    return [];
-  }
-
-  return data;
-};
-
-export const ResponseService = {
-  createResponse,
-  saveResponse,
-  updateResponse,
-  getAllResponses,
-  getResponseByCallId,
-  deleteResponse,
-  getResponseCountByOrganizationId,
-  getAllEmails: getAllEmailAddressesForInterview,
-};
+}

@@ -20,11 +20,51 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useInterviews } from "@/contexts/interviews.context";
 import { CandidateStatus } from "@/lib/enum";
 import { formatTimestampToDateHHMM } from "@/lib/utils";
-import { ClientService } from "@/services/clients.service";
-import { InterviewService } from "@/services/interviews.service";
-import { ResponseService } from "@/services/responses.service";
+import { getOrganizationById } from "@/services/clients.service";
+import { updateInterview } from "@/services/interviews.service";
+import { getAllResponses, saveResponse } from "@/services/responses.service";
 import type { Interview } from "@/types/interview";
-import type { Response } from "@/types/response";
+import type { Analytics, Response } from "@/types/response";
+
+// Prisma → legacy `Response` shape. Downstream components and templates
+// consume snake_case keys (call_id, candidate_status, is_viewed, ...), so
+// we remap Prisma's camelCase rows at this page boundary instead of
+// rewriting every consumer.
+type PrismaResponse = {
+  id: number;
+  createdAt: Date;
+  interviewId: string | null;
+  name: string | null;
+  email: string | null;
+  callId: string | null;
+  candidateStatus: string | null;
+  duration: number | null;
+  details: unknown;
+  analytics: unknown;
+  isAnalysed: boolean | null;
+  isEnded: boolean | null;
+  isViewed: boolean | null;
+  tabSwitchCount: number | null;
+};
+
+function toLegacyResponse(row: PrismaResponse): Response {
+  return {
+    id: BigInt(row.id),
+    created_at: row.createdAt,
+    name: row.name,
+    interview_id: row.interviewId ?? "",
+    duration: row.duration ?? 0,
+    call_id: row.callId ?? "",
+    details: row.details,
+    is_analysed: row.isAnalysed ?? false,
+    email: row.email ?? "",
+    is_ended: row.isEnded ?? false,
+    is_viewed: row.isViewed ?? false,
+    analytics: row.analytics as Analytics,
+    candidate_status: row.candidateStatus ?? "",
+    tab_switch_count: row.tabSwitchCount ?? 0,
+  };
+}
 import { useOrganization } from "@clerk/nextjs";
 import { Eye, Filter, Palette, Pencil, Share2, UserIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -81,9 +121,15 @@ function InterviewHome({ params, searchParams }: Props) {
     const fetchInterview = async () => {
       try {
         const response = await getInterviewById(resolvedParams.interviewId);
+        if (!response) {
+          return;
+        }
         setInterview(response);
         setIsActive(response.is_active);
-        setIsViewed(response.is_viewed);
+        // `is_viewed` is technically a Response-level field; upstream reads
+        // it off the Interview row here. Mirror the legacy access via a
+        // typed lookup to placate tsc.
+        setIsViewed((response as unknown as { is_viewed?: boolean }).is_viewed ?? false);
         setThemeColor(response.theme_color ?? "#4F46E5");
         seticonColor(response.theme_color ?? "#4F46E5");
         setLoading(true);
@@ -102,8 +148,10 @@ function InterviewHome({ params, searchParams }: Props) {
     const fetchOrganizationData = async () => {
       try {
         if (organization?.id) {
-          const data = await ClientService.getOrganizationById(organization.id);
-          if (data?.plan) {
+          const data = await getOrganizationById(organization.id);
+          // Service returns Organization | null | [] (error). Narrow out the
+          // array form before reading row fields.
+          if (data && !Array.isArray(data) && data.plan) {
             setCurrentPlan(data.plan);
           }
         }
@@ -117,8 +165,8 @@ function InterviewHome({ params, searchParams }: Props) {
   useEffect(() => {
     const fetchResponses = async () => {
       try {
-        const response = await ResponseService.getAllResponses(resolvedParams.interviewId);
-        setResponses(response);
+        const response = await getAllResponses(resolvedParams.interviewId);
+        setResponses(response.map(toLegacyResponse));
         setLoading(true);
       } catch (error) {
         console.error(error);
@@ -141,7 +189,7 @@ function InterviewHome({ params, searchParams }: Props) {
 
   const handleResponseClick = async (response: Response) => {
     try {
-      await ResponseService.saveResponse({ is_viewed: true }, response.call_id);
+      await saveResponse({ is_viewed: true }, response.call_id);
       if (responses) {
         const updatedResponses = responses.map((r) =>
           r.call_id === response.call_id ? { ...r, is_viewed: true } : r,
@@ -159,10 +207,7 @@ function InterviewHome({ params, searchParams }: Props) {
       const updatedIsActive = !isActive;
       setIsActive(updatedIsActive);
 
-      await InterviewService.updateInterview(
-        { is_active: updatedIsActive },
-        resolvedParams.interviewId,
-      );
+      await updateInterview({ is_active: updatedIsActive }, resolvedParams.interviewId);
 
       toast.success("Interview status updated", {
         description: `The interview is now ${updatedIsActive ? "active" : "inactive"}.`,
@@ -180,7 +225,7 @@ function InterviewHome({ params, searchParams }: Props) {
 
   const handleThemeColorChange = async (newColor: string) => {
     try {
-      await InterviewService.updateInterview({ theme_color: newColor }, resolvedParams.interviewId);
+      await updateInterview({ theme_color: newColor }, resolvedParams.interviewId);
 
       toast.success("Theme color updated", {
         position: "bottom-right",

@@ -1,7 +1,6 @@
 import { logger } from "@/lib/logger";
 import { generateInterviewAnalytics } from "@/services/analytics.service";
-import { ResponseService } from "@/services/responses.service";
-import type { Response } from "@/types/response";
+import { getResponseByCallId, saveResponse } from "@/services/responses.service";
 import { NextResponse } from "next/server";
 import Retell from "retell-sdk";
 
@@ -13,9 +12,15 @@ export async function POST(req: Request) {
   logger.info("get-call request received");
   const body = await req.json();
 
-  const callDetails: Response = await ResponseService.getResponseByCallId(body.id);
-  let callResponse = callDetails.details;
-  if (callDetails.is_analysed) {
+  const callDetails = await getResponseByCallId(body.id);
+  if (!callDetails) {
+    logger.error("Response row not found for callId");
+
+    return NextResponse.json({ error: "call not found" }, { status: 404 });
+  }
+
+  let callResponse: unknown = callDetails.details;
+  if (callDetails.isAnalysed) {
     return NextResponse.json(
       {
         callResponse,
@@ -25,24 +30,24 @@ export async function POST(req: Request) {
     );
   }
   const callOutput = await retell.call.retrieve(body.id);
-  const interviewId = callDetails?.interview_id;
+  const interviewId = callDetails.interviewId ?? "";
   callResponse = callOutput;
-  const duration = Math.round(
-    callResponse.end_timestamp / 1000 - callResponse.start_timestamp / 1000,
-  );
+  const endTimestamp = callOutput.end_timestamp ?? 0;
+  const startTimestamp = callOutput.start_timestamp ?? 0;
+  const duration = Math.round(endTimestamp / 1000 - startTimestamp / 1000);
 
   const payload = {
     callId: body.id,
     interviewId: interviewId,
-    transcript: callResponse.transcript,
+    transcript: callOutput.transcript ?? "",
   };
   const result = await generateInterviewAnalytics(payload);
 
   const analytics = result.analytics;
 
-  await ResponseService.saveResponse(
+  await saveResponse(
     {
-      details: callResponse,
+      details: callOutput,
       is_analysed: true,
       duration: duration,
       analytics: analytics,

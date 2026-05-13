@@ -14,9 +14,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useResponses } from "@/contexts/responses.context";
 import { isLightColor, testEmail } from "@/lib/utils";
-import { FeedbackService } from "@/services/feedback.service";
-import { InterviewerService } from "@/services/interviewers.service";
-import { ResponseService } from "@/services/responses.service";
+import { submitFeedback } from "@/services/feedback.service";
+import { getInterviewer } from "@/services/interviewers.service";
+import { getAllEmails, saveResponse } from "@/services/responses.service";
 import type { Interview } from "@/types/interview";
 import type { FeedbackData } from "@/types/response";
 import axios from "axios";
@@ -76,7 +76,7 @@ function Call({ interview }: InterviewProps) {
 
   const handleFeedbackSubmit = async (formData: Omit<FeedbackData, "interview_id">) => {
     try {
-      const result = await FeedbackService.submitFeedback({
+      const result = await submitFeedback({
         ...formData,
         interview_id: interview.id,
       });
@@ -194,9 +194,9 @@ function Call({ interview }: InterviewProps) {
     };
     setLoading(true);
 
-    const oldUserEmails: string[] = (await ResponseService.getAllEmails(interview.id)).map(
-      (item) => item.email,
-    );
+    const oldUserEmails: string[] = (await getAllEmails(interview.id))
+      .map((item: { email: string | null }) => item.email ?? "")
+      .filter((email: string) => email !== "");
     const OldUser =
       oldUserEmails.includes(email) ||
       (interview?.respondents && !interview?.respondents.includes(email));
@@ -241,8 +241,10 @@ function Call({ interview }: InterviewProps) {
 
   useEffect(() => {
     const fetchInterviewer = async () => {
-      const interviewer = await InterviewerService.getInterviewer(interview.interviewer_id);
-      setInterviewerImg(interviewer.image);
+      const interviewer = await getInterviewer(interview.interviewer_id);
+      if (interviewer) {
+        setInterviewerImg(interviewer.image);
+      }
     };
     fetchInterviewer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -252,10 +254,7 @@ function Call({ interview }: InterviewProps) {
   useEffect(() => {
     if (isEnded) {
       const updateInterview = async () => {
-        await ResponseService.saveResponse(
-          { is_ended: true, tab_switch_count: tabSwitchCount },
-          callId,
-        );
+        await saveResponse({ is_ended: true, tab_switch_count: tabSwitchCount }, callId);
       };
 
       updateInterview();

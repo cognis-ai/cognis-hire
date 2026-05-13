@@ -1,0 +1,167 @@
+// Prisma schema — translated from upstream FoloUp's supabase_schema.sql
+// plus the Cognis admin additions (cognis_org_id, deleted_at, interview_template).
+//
+// Conventions:
+//   * DB column names stay snake_case (matches upstream FoloUp). Prisma fields
+//     are camelCase via @map.
+//   * Table names match upstream verbatim (singular: "user", "interview",
+//     "response", etc.) via @@map so any in-flight SQL still aligns.
+//   * organization.id and user.id are TEXT (upstream choice — Clerk user IDs
+//     and Bridge-supplied org IDs are opaque strings). We keep them String.
+//   * Timestamps follow upstream's `TIMESTAMP WITH TIME ZONE DEFAULT
+//     TIMEZONE('utc', NOW())` — Prisma's @default(now()) emits TIMESTAMPTZ on
+//     postgresql, which matches.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  free
+  pro
+  free_trial_over
+
+  @@map("plan")
+}
+
+model Organization {
+  id                    String    @id @default(uuid())
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  name                  String?
+  imageUrl              String?   @map("image_url")
+  allowedResponsesCount Int?      @map("allowed_responses_count")
+  plan                  Plan?
+
+  // Cognis admin additions (from supabase/migrations/20260512120000_cognis_admin.sql)
+  cognisOrgId String?   @unique(map: "organization_cognis_org_id_key") @map("cognis_org_id")
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+
+  users             User[]
+  interviews        Interview[]
+  interviewTemplates InterviewTemplate[]
+
+  @@map("organization")
+}
+
+model User {
+  id             String   @id
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  email          String?
+  organizationId String?  @map("organization_id")
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  interviews   Interview[]
+
+  @@map("user")
+}
+
+model Interviewer {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  agentId     String?  @map("agent_id")
+  name        String
+  description String
+  image       String
+  audio       String?
+  empathy     Int
+  exploration Int
+  rapport     Int
+  speed       Int
+
+  interviews Interview[]
+
+  @@map("interviewer")
+}
+
+model Interview {
+  id                    String   @id
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  name                  String?
+  description           String?
+  objective             String?
+  organizationId        String?  @map("organization_id")
+  userId                String?  @map("user_id")
+  interviewerId         Int?     @map("interviewer_id")
+  isActive              Boolean  @default(true) @map("is_active")
+  isAnonymous           Boolean  @default(false) @map("is_anonymous")
+  isArchived            Boolean  @default(false) @map("is_archived")
+  logoUrl               String?  @map("logo_url")
+  themeColor            String?  @map("theme_color")
+  url                   String?
+  readableSlug          String?  @map("readable_slug")
+  questions             Json?
+  // upstream: quotes JSONB[] — array of JSON values
+  quotes                Json[]
+  // upstream: insights TEXT[]
+  insights              String[]
+  // upstream: respondents TEXT[]
+  respondents           String[]
+  questionCount         Int?     @map("question_count")
+  responseCount         Int?     @map("response_count")
+  timeDuration          String?  @map("time_duration")
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  user         User?         @relation(fields: [userId], references: [id])
+  interviewer  Interviewer?  @relation(fields: [interviewerId], references: [id])
+  responses    Response[]
+  feedback     Feedback[]
+
+  @@map("interview")
+}
+
+model Response {
+  id              Int      @id @default(autoincrement())
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  interviewId     String?  @map("interview_id")
+  name            String?
+  email           String?
+  callId          String?  @map("call_id")
+  candidateStatus String?  @map("candidate_status")
+  duration        Int?
+  details         Json?
+  analytics       Json?
+  isAnalysed      Boolean? @default(false) @map("is_analysed")
+  isEnded         Boolean? @default(false) @map("is_ended")
+  isViewed        Boolean? @default(false) @map("is_viewed")
+  tabSwitchCount  Int?     @map("tab_switch_count")
+
+  interview Interview? @relation(fields: [interviewId], references: [id])
+
+  @@map("response")
+}
+
+model Feedback {
+  id           Int      @id @default(autoincrement())
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  interviewId  String?  @map("interview_id")
+  email        String?
+  feedback     String?
+  satisfaction Int?
+
+  interview Interview? @relation(fields: [interviewId], references: [id])
+
+  @@map("feedback")
+}
+
+// Cognis admin addition — seeded by Bridge during tenant provisioning so a
+// new fork tenant lands with role-specific question packs.
+model InterviewTemplate {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String   @map("organization_id")
+  role           String
+  description    String?
+  questions      Json     @default("[]")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime? @map("updated_at") @db.Timestamptz()
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, role], map: "interview_template_org_role_unique")
+  @@index([organizationId], map: "interview_template_org_idx")
+  @@map("interview_template")
+}

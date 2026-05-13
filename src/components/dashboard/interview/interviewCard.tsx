@@ -1,8 +1,8 @@
 import MiniLoader from "@/components/loaders/mini-loader/miniLoader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
-import { InterviewerService } from "@/services/interviewers.service";
-import { ResponseService } from "@/services/responses.service";
+import { getInterviewer } from "@/services/interviewers.service";
+import { getAllResponses } from "@/services/responses.service";
 import axios from "axios";
 import { ArrowUpRight, Copy } from "lucide-react";
 import { CopyCheck } from "lucide-react";
@@ -29,8 +29,10 @@ function InterviewCard({ name, interviewerId, id, url, readableSlug }: Props) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
   useEffect(() => {
     const fetchInterviewer = async () => {
-      const interviewer = await InterviewerService.getInterviewer(interviewerId);
-      setImg(interviewer.image);
+      const interviewer = await getInterviewer(interviewerId);
+      if (interviewer) {
+        setImg(interviewer.image);
+      }
     };
     fetchInterviewer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -40,15 +42,15 @@ function InterviewCard({ name, interviewerId, id, url, readableSlug }: Props) {
   useEffect(() => {
     const fetchResponses = async () => {
       try {
-        const responses = await ResponseService.getAllResponses(id);
+        const responses = await getAllResponses(id);
         setResponseCount(responses.length);
         if (responses.length > 0) {
           setIsFetching(true);
           for (const response of responses) {
-            if (!response.is_analysed) {
+            if (!response.isAnalysed) {
               try {
                 const result = await axios.post("/api/get-call", {
-                  id: response.call_id,
+                  id: response.callId,
                 });
 
                 if (result.status !== 200) {
@@ -56,7 +58,7 @@ function InterviewCard({ name, interviewerId, id, url, readableSlug }: Props) {
                 }
               } catch (error) {
                 console.error(
-                  `Failed to call api/get-call for response id ${response.call_id}:`,
+                  `Failed to call api/get-call for response id ${response.callId}:`,
                   error,
                 );
               }

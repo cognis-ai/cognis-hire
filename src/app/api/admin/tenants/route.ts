@@ -8,17 +8,12 @@
 // instead of erroring. Bridge re-issues provisioning calls on retry
 // so this matters.
 
-import { getAdminSupabase, requireAdminAuth } from "@/lib/cognis-admin";
+import { type FoloupOrganization, createTenantBodySchema } from "@/lib/admin-schemas";
+import { requireAdminAuth } from "@/lib/cognis-admin";
 import { logger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { type NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
-
-interface CreateTenantBody {
-  cognis_org_id?: string;
-  name?: string;
-  plan?: "free" | "pro" | "free_trial_over";
-  allowed_responses_count?: number;
-}
 
 const DEFAULT_PLAN = "free";
 const DEFAULT_ALLOWED_RESPONSES = 10;
@@ -27,13 +22,13 @@ function toFoloupShape(row: {
   id: string;
   name: string | null;
   plan: string | null;
-  allowed_responses_count: number | null;
-}) {
+  allowedResponsesCount: number | null;
+}): FoloupOrganization {
   return {
     id: row.id,
     name: row.name ?? "",
     plan: row.plan ?? DEFAULT_PLAN,
-    allowedResponsesCount: row.allowed_responses_count ?? DEFAULT_ALLOWED_RESPONSES,
+    allowedResponsesCount: row.allowedResponsesCount ?? DEFAULT_ALLOWED_RESPONSES,
   };
 }
 
@@ -43,53 +38,49 @@ export async function POST(req: NextRequest) {
     return auth;
   }
 
-  let body: CreateTenantBody;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as CreateTenantBody;
+    rawBody = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json body" }, { status: 400 });
   }
 
-  if (!body.cognis_org_id || !body.name) {
-    return NextResponse.json({ error: "cognis_org_id and name are required" }, { status: 400 });
+  const parsed = createTenantBodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "cognis_org_id and name are required", details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
 
-  const supabase = getAdminSupabase();
+  const body = parsed.data;
 
-  // Idempotency: if this cognis_org_id already exists, return it.
-  const existing = await supabase
-    .from("organization")
-    .select("id, name, plan, allowed_responses_count, deleted_at")
-    .eq("cognis_org_id", body.cognis_org_id)
-    .is("deleted_at", null)
-    .maybeSingle();
+  try {
+    // Idempotency: if this cognis_org_id already exists (non-deleted), return it.
+    const existing = await prisma.organization.findFirst({
+      where: { cognisOrgId: body.cognis_org_id, deletedAt: null },
+      select: { id: true, name: true, plan: true, allowedResponsesCount: true },
+    });
 
-  if (existing.error) {
-    logger.error(`tenant lookup failed: ${existing.error.message}`);
-    return NextResponse.json({ error: "lookup failed" }, { status: 500 });
-  }
+    if (existing) {
+      return NextResponse.json(toFoloupShape(existing), { status: 200 });
+    }
 
-  if (existing.data) {
-    return NextResponse.json(toFoloupShape(existing.data), { status: 200 });
-  }
+    const created = await prisma.organization.create({
+      data: {
+        id: uuidv4(),
+        name: body.name,
+        plan: body.plan ?? DEFAULT_PLAN,
+        allowedResponsesCount: body.allowed_responses_count ?? DEFAULT_ALLOWED_RESPONSES,
+        cognisOrgId: body.cognis_org_id,
+      },
+      select: { id: true, name: true, plan: true, allowedResponsesCount: true },
+    });
 
-  const id = uuidv4();
-  const insert = await supabase
-    .from("organization")
-    .insert({
-      id,
-      name: body.name,
-      plan: body.plan ?? DEFAULT_PLAN,
-      allowed_responses_count: body.allowed_responses_count ?? DEFAULT_ALLOWED_RESPONSES,
-      cognis_org_id: body.cognis_org_id,
-    })
-    .select("id, name, plan, allowed_responses_count")
-    .single();
-
-  if (insert.error || !insert.data) {
-    logger.error(`tenant insert failed: ${insert.error?.message}`);
+    return NextResponse.json(toFoloupShape(created), { status: 201 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error(`tenant provision failed: ${message}`);
     return NextResponse.json({ error: "insert failed" }, { status: 500 });
   }
-
-  return NextResponse.json(toFoloupShape(insert.data), { status: 201 });
 }

@@ -8,13 +8,10 @@
 // Token TTL: 5 minutes. Single-use is enforced loosely via the short TTL —
 // strict single-use needs a nonce table which lands in W9.1.
 
-import {
-  getAdminSupabase,
-  publicBaseUrl,
-  requireAdminAuth,
-  signSsoHandoffToken,
-} from "@/lib/cognis-admin";
+import type { SsoTokenResponse } from "@/lib/admin-schemas";
+import { publicBaseUrl, requireAdminAuth, signSsoHandoffToken } from "@/lib/cognis-admin";
 import { logger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { type NextRequest, NextResponse } from "next/server";
 
 const TOKEN_TTL_SECONDS = 5 * 60;
@@ -30,42 +27,40 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     return NextResponse.json({ error: "missing user id" }, { status: 400 });
   }
 
-  const supabase = getAdminSupabase();
-  const { data, error } = await supabase
-    .from("user")
-    .select("id, organization_id")
-    .eq("id", id)
-    .maybeSingle();
+  try {
+    const data = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, organizationId: true },
+    });
 
-  if (error) {
-    logger.error(`sso-token user lookup failed: ${error.message}`);
-    return NextResponse.json({ error: "lookup failed" }, { status: 500 });
-  }
+    if (!data) {
+      return NextResponse.json({ error: "user not found" }, { status: 404 });
+    }
 
-  if (!data) {
-    return NextResponse.json({ error: "user not found" }, { status: 404 });
-  }
+    const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString();
+    const token = await signSsoHandoffToken(
+      {
+        user_id: data.id,
+        organization_id: data.organizationId ?? "",
+      },
+      `${TOKEN_TTL_SECONDS}s`,
+      auth,
+    );
 
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString();
-  const token = await signSsoHandoffToken(
-    {
-      user_id: data.id,
-      organization_id: data.organization_id ?? "",
-    },
-    `${TOKEN_TTL_SECONDS}s`,
-    auth,
-  );
+    const url = new URL("/api/auth/sso-redeem", publicBaseUrl());
+    url.searchParams.set("token", token);
+    url.searchParams.set("user_id", data.id);
 
-  const url = new URL("/api/auth/sso-redeem", publicBaseUrl());
-  url.searchParams.set("token", token);
-  url.searchParams.set("user_id", data.id);
-
-  return NextResponse.json(
-    {
+    const payload: SsoTokenResponse = {
       url: url.toString(),
       token,
       expires_at: expiresAt,
-    },
-    { status: 200 },
-  );
+    };
+
+    return NextResponse.json(payload, { status: 200 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error(`sso-token mint failed: ${message}`);
+    return NextResponse.json({ error: "lookup failed" }, { status: 500 });
+  }
 }

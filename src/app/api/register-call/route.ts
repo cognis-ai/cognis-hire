@@ -1,5 +1,5 @@
 import { logger } from "@/lib/logger";
-import { InterviewerService } from "@/services/interviewers.service";
+import { getInterviewer } from "@/services/interviewers.service";
 import { NextResponse } from "next/server";
 import Retell from "retell-sdk";
 
@@ -13,10 +13,10 @@ export async function POST(req: Request) {
   const body = await req.json();
 
   const interviewerId = body.interviewer_id;
-  const interviewer = await InterviewerService.getInterviewer(interviewerId);
+  const interviewer = await getInterviewer(interviewerId);
 
   const registerCallResponse = await retellClient.call.createWebCall({
-    agent_id: interviewer?.agent_id,
+    agent_id: interviewer?.agentId ?? "",
     retell_llm_dynamic_variables: body.dynamic_data,
   });
 

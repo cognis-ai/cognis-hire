@@ -1,9 +1,10 @@
 // DELETE /api/admin/tenants/[id] — soft-delete the tenant by stamping
-// organization.deleted_at. We never hard-delete: candidate-facing call URLs
+// organization.deletedAt. We never hard-delete: candidate-facing call URLs
 // must remain readable for compliance archive.
 
-import { getAdminSupabase, requireAdminAuth } from "@/lib/cognis-admin";
+import { requireAdminAuth } from "@/lib/cognis-admin";
 import { logger } from "@/lib/logger";
+import { prisma } from "@/lib/prisma";
 import { type NextRequest, NextResponse } from "next/server";
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
@@ -17,16 +18,16 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     return NextResponse.json({ error: "missing tenant id" }, { status: 400 });
   }
 
-  const supabase = getAdminSupabase();
-  const { error } = await supabase
-    .from("organization")
-    .update({ deleted_at: new Date().toISOString() })
-    .eq("id", id);
+  try {
+    await prisma.organization.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
 
-  if (error) {
-    logger.error(`tenant soft-delete failed: ${error.message}`);
+    return NextResponse.json({ id, deleted: true }, { status: 200 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    logger.error(`tenant soft-delete failed: ${message}`);
     return NextResponse.json({ error: "soft-delete failed" }, { status: 500 });
   }
-
-  return NextResponse.json({ id, deleted: true }, { status: 200 });
 }
