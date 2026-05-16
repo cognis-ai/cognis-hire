@@ -42,6 +42,10 @@ This is a soft fork of `FoloUp/FoloUp` (AI-recruiting / interview agent). **The 
 
 This is upstream FoloUp: `yarn install`, `yarn dev`, etc. See upstream README. (Don't run inside the fork until Phase 2 — bootstrap stage is git topology only.)
 
+## Cost policy
+
+This fork inherits Cognis's managed-SaaS cost policy — see `../cognis-platform/docs/specs/cost-policy.md` for the full per-fork list and rationale. `cognis-hire` has NO Cognis-billable SaaS DSNs to gate (the 2026-05-13 survey came back clean — upstream FoloUp ships no phone-home SDKs). There's nothing to unset; the policy still applies if a future upstream rebase introduces one.
+
 ## What NOT to do
 
 - Don't `import openai` or `import @anthropic-ai/sdk` directly — use the Cognis LLM client wrapper
