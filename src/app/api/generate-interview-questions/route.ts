@@ -1,11 +1,15 @@
 import { cognisChat } from "@/lib/cognis-llm";
 import { logger } from "@/lib/logger";
 import { SYSTEM_PROMPT, generateQuestionsPrompt } from "@/lib/prompts/generate-questions";
+import { requireOrgSession } from "@/lib/session-guard";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
+  const session = await requireOrgSession();
+  if (session instanceof NextResponse) return session;
+
   logger.info("generate-interview-questions request received");
   const body = await req.json();
 

@@ -1,65 +1,40 @@
-import { INTERVIEWERS, RETELL_AGENT_GENERAL_PROMPT } from "@/lib/constants";
+// Seeds the two stock interviewer personas (Lisa, Bob) for first-time
+// dashboard load. Was Retell-based; rewired 2026-05-16 to Pipecat —
+// no per-tenant external agent resource needs creating, we just stamp
+// the local Interviewer rows with a Cartesia voice ID.
+
+import { INTERVIEWERS } from "@/lib/constants";
 import { logger } from "@/lib/logger";
+import { requireOrgSession } from "@/lib/session-guard";
 import { createInterviewer } from "@/services/interviewers.service";
 import { type NextRequest, NextResponse } from "next/server";
-import Retell from "retell-sdk";
 
-const retellClient = new Retell({
-  apiKey: process.env.RETELL_API_KEY || "",
-});
+// Default Cartesia voice IDs. Replaceable per-tenant later if/when we add
+// voice customization in the dashboard. These match voice_id strings from
+// Cartesia's public voice library — see https://play.cartesia.ai/voices.
+// User should swap in the IDs they want from their Cartesia account.
+const VOICE_LISA = "79a125e8-cd45-4c13-8a67-188112f4dd22"; // English-female default
+const VOICE_BOB = "421b3369-f63f-4b03-8980-37a44df1d4e8"; // English-male default
 
-export async function GET(res: NextRequest) {
+export async function GET(req: NextRequest) {
+  const session = await requireOrgSession();
+  if (session instanceof NextResponse) return session;
+
   logger.info("create-interviewer request received");
 
   try {
-    const newModel = await retellClient.llm.create({
-      model: "gpt-4o",
-      general_prompt: RETELL_AGENT_GENERAL_PROMPT,
-      general_tools: [
-        {
-          type: "end_call",
-          name: "end_call_1",
-          description:
-            "End the call if the user uses goodbye phrases such as 'bye,' 'goodbye,' or 'have a nice day.' ",
-        },
-      ],
-    });
-
-    // Create Lisa
-    const newFirstAgent = await retellClient.agent.create({
-      response_engine: { llm_id: newModel.llm_id, type: "retell-llm" },
-      voice_id: "11labs-Chloe",
-      agent_name: "Lisa",
-    });
-
-    const newInterviewer = await createInterviewer({
-      agent_id: newFirstAgent.agent_id,
+    const lisa = await createInterviewer({
+      agent_id: VOICE_LISA,
       ...INTERVIEWERS.LISA,
     });
-
-    // Create Bob
-    const newSecondAgent = await retellClient.agent.create({
-      response_engine: { llm_id: newModel.llm_id, type: "retell-llm" },
-      voice_id: "11labs-Brian",
-      agent_name: "Bob",
-    });
-
-    const newSecondInterviewer = await createInterviewer({
-      agent_id: newSecondAgent.agent_id,
+    const bob = await createInterviewer({
+      agent_id: VOICE_BOB,
       ...INTERVIEWERS.BOB,
     });
 
-    logger.info("");
-
-    return NextResponse.json(
-      {
-        newInterviewer,
-        newSecondInterviewer,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ newInterviewer: lisa, newSecondInterviewer: bob }, { status: 200 });
   } catch (error) {
-    logger.error("Error creating interviewers:");
+    logger.error("Error creating interviewers");
 
     return NextResponse.json({ error: "Failed to create interviewers" }, { status: 500 });
   }

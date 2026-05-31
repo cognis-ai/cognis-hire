@@ -82,3 +82,11 @@ CREATE TABLE feedback (
     feedback TEXT,
     satisfaction INTEGER
 );
+
+-- Cognis perf indexes (audit 2026-05-28): hot-path FK / lookup columns.
+-- Mirrors the @@index(...) entries in prisma/schema.prisma.
+CREATE INDEX IF NOT EXISTS response_call_id_idx ON response (call_id);
+CREATE INDEX IF NOT EXISTS response_interview_id_idx ON response (interview_id);
+CREATE INDEX IF NOT EXISTS user_email_organization_id_idx ON "user" (email, organization_id);
+CREATE INDEX IF NOT EXISTS interview_organization_id_idx ON interview (organization_id);
+CREATE INDEX IF NOT EXISTS interview_user_id_idx ON interview (user_id);

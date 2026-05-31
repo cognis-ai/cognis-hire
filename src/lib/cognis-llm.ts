@@ -70,14 +70,25 @@ export async function cognisChat(req: CognisChatRequest): Promise<CognisChatResp
   const baseUrl = resolveBaseUrl();
   const key = resolveKey();
 
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(req),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify(req),
+      // LLM completions can be slow; allow up to 30s before giving up.
+      // Mirrors the AbortSignal.timeout(...) pattern in voice-webhook/route.ts.
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
+      throw new Error("cognisChat timed out after 30s waiting for the LiteLLM gateway");
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "<no body>");

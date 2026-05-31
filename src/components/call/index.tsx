@@ -21,29 +21,26 @@ import { getInterviewer } from "@/services/interviewers.service";
 import { getAllEmails, saveResponse } from "@/services/responses.service";
 import type { Interview } from "@/types/interview";
 import type { FeedbackData } from "@/types/response";
+import { PipecatClient } from "@pipecat-ai/client-js";
+import { ProtobufFrameSerializer, WebSocketTransport } from "@pipecat-ai/websocket-transport";
 import axios from "axios";
 import { AlarmClockIcon, ArrowUpRightSquareIcon, CheckCircleIcon, XCircleIcon } from "lucide-react";
 import Image from "next/image";
 import React, { useState, useEffect, useRef } from "react";
-import { RetellWebClient } from "retell-client-js-sdk";
 import { toast } from "sonner";
 import MiniLoader from "../loaders/mini-loader/miniLoader";
 import { Button } from "../ui/button";
 import { Card, CardHeader, CardTitle } from "../ui/card";
 import { TabSwitchWarning, useTabSwitchPrevention } from "./tabSwitchPrevention";
 
-const webClient = new RetellWebClient();
-
 type InterviewProps = {
   interview: Interview;
 };
 
-type registerCallResponseType = {
+type StartInterviewResponse = {
   data: {
-    registerCallResponse: {
-      call_id: string;
-      access_token: string;
-    };
+    session_id: string;
+    ws_url: string;
   };
 };
 
@@ -75,6 +72,14 @@ function Call({ interview }: InterviewProps) {
   const [currentTimeDuration, setCurrentTimeDuration] = useState<string>("0");
 
   const lastUserResponseRef = useRef<HTMLDivElement | null>(null);
+  // Pipecat client is created per-session inside startConversation — the
+  // WS URL only exists after /api/start-interview returns. Keep it in a ref
+  // so the unmount cleanup can reach it.
+  const pipecatClientRef = useRef<PipecatClient | null>(null);
+  // Accumulate transcript turns ourselves — Pipecat emits incremental
+  // events (onUserTranscript per phrase, onBotOutput per LLM chunk) rather
+  // than the full transcript Retell used to push.
+  const transcriptRef = useRef<transcriptType[]>([]);
 
   const handleFeedbackSubmit = async (formData: Omit<FeedbackData, "interview_id">) => {
     try {
@@ -113,7 +118,7 @@ function Call({ interview }: InterviewProps) {
     }
     setCurrentTimeDuration(String(Math.floor(time / 100)));
     if (Number(currentTimeDuration) === Number(interviewTimeDuration) * 60) {
-      webClient.stopCall();
+      pipecatClientRef.current?.disconnect().catch(() => {});
       setIsEnded(true);
     }
 
@@ -127,59 +132,18 @@ function Call({ interview }: InterviewProps) {
     }
   }, [email]);
 
+  // Component unmount: ensure we don't leave a dangling WS connection.
   useEffect(() => {
-    webClient.on("call_started", () => {
-      console.log("Call started");
-      setIsCalling(true);
-    });
-
-    webClient.on("call_ended", () => {
-      console.log("Call ended");
-      setIsCalling(false);
-      setIsEnded(true);
-    });
-
-    webClient.on("agent_start_talking", () => {
-      setActiveTurn("agent");
-    });
-
-    webClient.on("agent_stop_talking", () => {
-      // Optional: Add any logic when agent stops talking
-      setActiveTurn("user");
-    });
-
-    webClient.on("error", (error) => {
-      console.error("An error occurred:", error);
-      webClient.stopCall();
-      setIsEnded(true);
-      setIsCalling(false);
-    });
-
-    webClient.on("update", (update) => {
-      if (update.transcript) {
-        const transcripts: transcriptType[] = update.transcript;
-        const roleContents: { [key: string]: string } = {};
-
-        for (const transcript of transcripts) {
-          roleContents[transcript?.role] = transcript?.content;
-        }
-
-        setLastInterviewerResponse(roleContents.agent);
-        setLastUserResponse(roleContents.user);
-      }
-      //TODO: highlight the newly uttered word in the UI
-    });
-
     return () => {
-      // Clean up event listeners
-      webClient.removeAllListeners();
+      pipecatClientRef.current?.disconnect().catch(() => {});
+      pipecatClientRef.current = null;
     };
   }, []);
 
   const onEndCallClick = async () => {
     if (isStarted) {
       setLoading(true);
-      webClient.stopCall();
+      await pipecatClientRef.current?.disconnect().catch(() => {});
       setIsEnded(true);
       setLoading(false);
     } else {
@@ -205,34 +169,102 @@ function Call({ interview }: InterviewProps) {
 
     if (OldUser) {
       setIsOldUser(true);
-    } else {
-      const registerCallResponse: registerCallResponseType = await axios.post(
-        "/api/register-call",
-        { dynamic_data: data, interviewer_id: interview?.interviewer_id },
-      );
-      if (registerCallResponse.data.registerCallResponse.access_token) {
-        await webClient
-          .startCall({
-            accessToken: registerCallResponse.data.registerCallResponse.access_token,
-          })
-          .catch(console.error);
-        setIsCalling(true);
-        setIsStarted(true);
-
-        setCallId(registerCallResponse?.data?.registerCallResponse?.call_id);
-
-        const response = await createResponse({
-          interview_id: interview.id,
-          call_id: registerCallResponse.data.registerCallResponse.call_id,
-          email: email,
-          name: name,
-        });
-      } else {
-        console.log("Failed to register call");
-      }
+      setLoading(false);
+      return;
     }
 
-    setLoading(false);
+    try {
+      // 1. Ask the fork to provision a voice-bot session.
+      const startResp: StartInterviewResponse = await axios.post("/api/start-interview", {
+        interview_id: interview.id,
+        interviewer_id: interview?.interviewer_id,
+        dynamic_data: data,
+      });
+
+      const { session_id, ws_url } = startResp.data;
+      if (!session_id || !ws_url) {
+        throw new Error("voice-bot did not return session_id/ws_url");
+      }
+
+      // 2. Build the Pipecat client + WebSocket transport for this session.
+      const transport = new WebSocketTransport({
+        serializer: new ProtobufFrameSerializer(),
+      });
+
+      const client = new PipecatClient({
+        transport,
+        enableMic: true,
+        enableCam: false,
+        callbacks: {
+          onConnected: () => {
+            setIsCalling(true);
+            setIsStarted(true);
+          },
+          onBotReady: () => {
+            // The bot is ready to receive audio; the candidate can start talking
+            // (or wait for the greeting if the prompt instructs the bot to lead).
+          },
+          onUserTranscript: (data: { text?: string; final?: boolean }) => {
+            if (!data.text) return;
+            setLastUserResponse(data.text);
+            if (data.final) {
+              transcriptRef.current.push({ role: "user", content: data.text });
+            }
+          },
+          onBotTtsText: (data: { text?: string }) => {
+            // Streamed TTS chunks — accumulate per-turn into a single line.
+            if (data.text) {
+              setLastInterviewerResponse((prev) => prev + data.text);
+            }
+          },
+          onBotStartedSpeaking: () => {
+            setActiveTurn("agent");
+            // Reset displayed bot text at the start of each turn.
+            setLastInterviewerResponse("");
+          },
+          onBotStoppedSpeaking: () => {
+            setActiveTurn("user");
+            // Commit the just-finished bot turn to transcript history.
+            // Use the ref-current text since setState updates are async.
+            const finalText = lastInterviewerResponse;
+            if (finalText) {
+              transcriptRef.current.push({ role: "agent", content: finalText });
+            }
+          },
+          onDisconnected: () => {
+            setIsCalling(false);
+            setIsEnded(true);
+          },
+          onError: (message) => {
+            console.error("Pipecat error:", message);
+            client.disconnect().catch(() => {});
+            setIsEnded(true);
+            setIsCalling(false);
+          },
+        },
+      });
+
+      pipecatClientRef.current = client;
+      setCallId(session_id);
+
+      // 3. Connect — opens mic + WS, after which the pipeline starts.
+      await client.connect({ wsUrl: ws_url });
+
+      // 4. Persist the candidate record locally. Sidecar will fire the
+      // completion webhook on disconnect with the full transcript.
+      await createResponse({
+        interview_id: interview.id,
+        call_id: session_id,
+        email,
+        name,
+      });
+    } catch (err) {
+      console.error("Failed to start interview:", err);
+      toast.error("Could not start the interview — please try again");
+      setIsEnded(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {

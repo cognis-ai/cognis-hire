@@ -4,9 +4,13 @@ import {
   SYSTEM_PROMPT,
   getCommunicationAnalysisPrompt,
 } from "@/lib/prompts/communication-analysis";
+import { requireOrgSession } from "@/lib/session-guard";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
+  const session = await requireOrgSession();
+  if (session instanceof NextResponse) return session;
+
   logger.info("analyze-communication request received");
 
   try {

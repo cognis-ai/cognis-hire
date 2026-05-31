@@ -56,14 +56,39 @@ export async function POST(req: NextRequest) {
   const body = parsed.data;
 
   try {
-    // Idempotency: if this cognis_org_id already exists (non-deleted), return it.
-    const existing = await prisma.organization.findFirst({
+    // Idempotency tier 1: live row exists → return it.
+    const live = await prisma.organization.findFirst({
       where: { cognisOrgId: body.cognis_org_id, deletedAt: null },
       select: { id: true, name: true, plan: true, allowedResponsesCount: true },
     });
 
-    if (existing) {
-      return NextResponse.json(toFoloupShape(existing), { status: 200 });
+    if (live) {
+      return NextResponse.json(toFoloupShape(live), { status: 200 });
+    }
+
+    // Idempotency tier 2: soft-deleted row exists for this cognisOrgId.
+    // The unique constraint on cognisOrgId is total (not partial), so a fresh
+    // INSERT would fail. Restore the existing row (clear deletedAt + refresh
+    // name/plan from the new request) and return it. Without this, Bridge
+    // re-provisioning loops indefinitely with 500s.
+    const deleted = await prisma.organization.findFirst({
+      where: { cognisOrgId: body.cognis_org_id, NOT: { deletedAt: null } },
+      select: { id: true },
+    });
+
+    if (deleted) {
+      const restored = await prisma.organization.update({
+        where: { id: deleted.id },
+        data: {
+          deletedAt: null,
+          name: body.name,
+          plan: body.plan ?? DEFAULT_PLAN,
+          allowedResponsesCount: body.allowed_responses_count ?? DEFAULT_ALLOWED_RESPONSES,
+        },
+        select: { id: true, name: true, plan: true, allowedResponsesCount: true },
+      });
+      logger.info(`restored soft-deleted tenant for cognis_org_id=${body.cognis_org_id}`);
+      return NextResponse.json(toFoloupShape(restored), { status: 200 });
     }
 
     const created = await prisma.organization.create({
@@ -81,6 +106,6 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
     logger.error(`tenant provision failed: ${message}`);
-    return NextResponse.json({ error: "insert failed" }, { status: 500 });
+    return NextResponse.json({ error: "insert failed", detail: message }, { status: 500 });
   }
 }

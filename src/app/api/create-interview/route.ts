@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { requireOrgSession } from "@/lib/session-guard";
 import { createInterview } from "@/services/interviews.service";
 import { nanoid } from "nanoid";
 import { NextResponse } from "next/server";
@@ -6,6 +7,9 @@ import { NextResponse } from "next/server";
 const base_url = process.env.NEXT_PUBLIC_LIVE_URL;
 
 export async function POST(req: Request) {
+  const session = await requireOrgSession();
+  if (session instanceof NextResponse) return session;
+
   try {
     const url_id = nanoid();
     const url = `${base_url}/call/${url_id}`;
@@ -22,8 +26,12 @@ export async function POST(req: Request) {
       readableSlug = `${orgNameSlug}-${interviewNameSlug}`;
     }
 
+    // organizationId comes from the verified session, NOT from the request
+    // body — body.organizationId would let any signed-in user create
+    // interviews in another tenant's org.
     const newInterview = await createInterview({
       ...payload,
+      organization_id: session.orgId,
       url: url,
       id: url_id,
       readable_slug: readableSlug,

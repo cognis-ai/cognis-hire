@@ -1,15 +1,18 @@
 import { cognisChat } from "@/lib/cognis-llm";
 import { logger } from "@/lib/logger";
 import { SYSTEM_PROMPT, createUserPrompt } from "@/lib/prompts/generate-insights";
+import { assertOwnedByOrg, requireOrgSession } from "@/lib/session-guard";
 import { getInterviewById, updateInterview } from "@/services/interviews.service";
 import { getAllResponses } from "@/services/responses.service";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
+  const session = await requireOrgSession();
+  if (session instanceof NextResponse) return session;
+
   logger.info("generate-insights request received");
   const body = await req.json();
 
-  const responses = await getAllResponses(body.interviewId);
   const interview = await getInterviewById(body.interviewId);
 
   if (!interview) {
@@ -17,6 +20,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ error: "interview not found" }, { status: 404 });
   }
+
+  const ownership = assertOwnedByOrg(interview.organizationId, session.orgId);
+  if (ownership) return ownership;
+
+  const responses = await getAllResponses(body.interviewId);
 
   let callSummaries = "";
   if (responses) {

@@ -57,6 +57,8 @@ model User {
   organization Organization? @relation(fields: [organizationId], references: [id])
   interviews   Interview[]
 
+  // Cognis perf: composite lookup on tenant membership (email + org).
+  @@index([email, organizationId], map: "user_email_organization_id_idx")
   @@map("user")
 }
 
@@ -111,6 +113,9 @@ model Interview {
   responses    Response[]
   feedback     Feedback[]
 
+  // Cognis perf: hot-path FK lookups (per-org and per-user interview lists).
+  @@index([organizationId], map: "interview_organization_id_idx")
+  @@index([userId], map: "interview_user_id_idx")
   @@map("interview")
 }
 
@@ -132,6 +137,10 @@ model Response {
 
   interview Interview? @relation(fields: [interviewId], references: [id])
 
+  // Cognis perf: voice-interview write/lookup path keys on call_id (session id)
+  // and interview_id.
+  @@index([callId], map: "response_call_id_idx")
+  @@index([interviewId], map: "response_interview_id_idx")
   @@map("response")
 }
 
