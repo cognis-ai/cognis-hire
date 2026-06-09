@@ -114,6 +114,36 @@ export async function POST(req: NextRequest) {
     voiceConfigId = interviewer?.agentId ?? undefined;
   }
 
+  // Phase 3: fetch a per-session, team-scoped LiteLLM key from Bridge so the
+  // voice-bot never holds the master key. Fail CLOSED if Bridge is configured
+  // but the mint fails. In dev (Bridge env unset) the bot uses its env key.
+  let litellmKey: string | undefined;
+  const bridgeUrl = process.env.BRIDGE_PUBLIC_URL;
+  const operatorToken = process.env.COGNIS_ADMIN_TOKEN;
+  if (bridgeUrl && operatorToken) {
+    try {
+      const keyRes = await fetch(`${bridgeUrl.replace(/\/$/, "")}/v1/voice/session-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-cognis-admin-token": operatorToken },
+        body: JSON.stringify({
+          cognisOrgId: interview.organizationId ?? "",
+          interviewId: interview.id,
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!keyRes.ok) {
+        logger.error(`Bridge /voice/session-key returned ${keyRes.status}`);
+        return NextResponse.json({ error: "failed to start interview" }, { status: 503 });
+      }
+      litellmKey = ((await keyRes.json()) as { key?: string }).key;
+    } catch (err) {
+      logger.error(
+        `Bridge /voice/session-key failed: ${err instanceof Error ? err.message : "unknown"}`,
+      );
+      return NextResponse.json({ error: "failed to start interview" }, { status: 503 });
+    }
+  }
+
   try {
     const res = await fetch(`${voiceBotUrl.replace(/\/$/, "")}/start_bot`, {
       method: "POST",
@@ -125,6 +155,8 @@ export async function POST(req: NextRequest) {
         interview_id: interview.id,
         // Tenant binding the bot stamps on the session (now required).
         org_id: interview.organizationId ?? "",
+        // Per-session LiteLLM key (Phase 3); undefined in dev → bot env fallback.
+        litellm_key: litellmKey,
         system_prompt: systemPrompt,
         metadata: {
           interview_id: interview.id,
