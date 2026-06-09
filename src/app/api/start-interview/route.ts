@@ -61,7 +61,10 @@ interface StartInterviewBody {
 
 interface VoiceBotStartResponse {
   session_id: string;
-  ws_url: string;
+  // The bot returns a session-relative path + per-session token; we compose
+  // the public wss:// URL and embed the token as ?t= for the browser.
+  ws_path: string;
+  ws_token: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -120,6 +123,8 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({
         interview_id: interview.id,
+        // Tenant binding the bot stamps on the session (now required).
+        org_id: interview.organizationId ?? "",
         system_prompt: systemPrompt,
         metadata: {
           interview_id: interview.id,
@@ -143,14 +148,15 @@ export async function POST(req: NextRequest) {
 
     const data = (await res.json()) as VoiceBotStartResponse;
 
-    // Rewrite the ws_url for the browser. The sidecar returns its internal
-    // URL (ws://0.0.0.0:8080/...), but the browser needs the public one.
+    // Compose the public ws(s):// URL for the browser. The sidecar returns a
+    // session-relative path + a per-session token; the token rides as ?t= and
+    // is checked (constant-time) on the WS upgrade before accept().
     // VOICE_BOT_BASE_URL is http(s)://; convert scheme to ws(s)://.
     const publicWsBase = voiceBotUrl
       .replace(/^https/, "wss")
       .replace(/^http/, "ws")
       .replace(/\/$/, "");
-    const publicWsUrl = `${publicWsBase}/interview/${data.session_id}`;
+    const publicWsUrl = `${publicWsBase}${data.ws_path}?t=${encodeURIComponent(data.ws_token)}`;
 
     return NextResponse.json(
       {
