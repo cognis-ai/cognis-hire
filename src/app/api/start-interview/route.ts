@@ -8,6 +8,7 @@
 // the interview. This matches upstream FoloUp's invariant. The link is
 // distributed by the hiring org to specific candidates.
 
+import { checkOrgResponseQuota } from "@/lib/cognis/quota";
 import { logger } from "@/lib/logger";
 import { getInterviewer } from "@/services/interviewers.service";
 import { getInterviewById } from "@/services/interviews.service";
@@ -85,6 +86,25 @@ export async function POST(req: NextRequest) {
   const interview = await getInterviewById(body.interview_id);
   if (!interview || !interview.isActive) {
     return NextResponse.json({ error: "interview not found or inactive" }, { status: 404 });
+  }
+
+  // Server-side plan-quota gate (Gate 1 defect 8 / M9). The dashboard's
+  // client-side check only fires when an operator loads the dashboard; this
+  // is the actual revenue control. Typed `code` lets the candidate UI show a
+  // quota-specific message instead of a generic failure.
+  const quota = await checkOrgResponseQuota(interview.organizationId);
+  if (!quota.allowed) {
+    logger.warn(
+      `start-interview blocked by quota: org=${interview.organizationId} plan=${quota.plan} ` +
+        `responses=${quota.responsesCount}/${quota.allowedResponsesCount}`,
+    );
+    return NextResponse.json(
+      {
+        error: "response limit reached — the hiring organization must upgrade its plan",
+        code: quota.code,
+      },
+      { status: 403 },
+    );
   }
 
   // Voice-bot signup gate — the env vars below must be present in prod.

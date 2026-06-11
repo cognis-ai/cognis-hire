@@ -1,6 +1,7 @@
 // Voice-bot webhook receiver. The Pipecat sidecar POSTs interview events
 // here on call end. Verifies HMAC, persists the transcript locally, then
-// forwards to Bridge /v1/hire/webhook for billing + audit.
+// forwards to Bridge /hire/webhook (raw-body mount outside the /v1 prefix)
+// for billing + audit.
 //
 // Replaced /api/response-webhook (Retell signature) on 2026-05-16.
 // Auth: HMAC-SHA256 of raw body bytes with VOICE_BOT_SHARED_SECRET, sent in
@@ -52,28 +53,31 @@ async function forwardToBridge(payload: unknown, rawBytes: Buffer): Promise<void
   }
 
   // Bridge expects HMAC over the body it receives. Re-sign with the
-  // Bridge-side shared secret (different from the voice-bot's).
+  // Bridge-side shared secret (different from the voice-bot's). Header
+  // format matches Bridge's verifier: `X-Cognis-Signature: sha256=<hex>`.
   const bridgeSig = crypto
     .createHmac("sha256", sharedSecret)
     .update(rawBytes)
     .digest("hex");
 
   try {
-    const res = await fetch(`${bridgeUrl.replace(/\/$/, "")}/v1/hire/webhook`, {
+    const res = await fetch(`${bridgeUrl.replace(/\/$/, "")}/hire/webhook`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Cognis-Signature": bridgeSig,
+        "X-Cognis-Signature": `sha256=${bridgeSig}`,
       },
       body: rawBytes,
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
-      logger.warn(`Bridge /v1/hire/webhook returned ${res.status}`);
+      // A rejected forward is a lost billing/audit event — surface loudly.
+      logger.error(`Bridge /hire/webhook returned ${res.status}`);
     }
   } catch (err) {
-    // Don't fail the upstream webhook on Bridge unreachable — just log.
-    logger.warn(`Bridge forwarding failed: ${err instanceof Error ? err.message : "unknown"}`);
+    // Don't fail the upstream webhook on Bridge unreachable — but a dropped
+    // forward is a lost billing/audit event, so log at error level.
+    logger.error(`Bridge forwarding failed: ${err instanceof Error ? err.message : "unknown"}`);
   }
 }
 

@@ -47,7 +47,7 @@ describe("cognisChat", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
 
     expect(url).toBe("https://litellm.example.test/v1/chat/completions");
     expect(init.method).toBe("POST");

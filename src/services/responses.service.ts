@@ -7,6 +7,7 @@
 // Server-side callers (API routes, other server actions) import them like
 // normal async functions and skip the RPC roundtrip.
 
+import { checkInterviewResponseQuota } from "@/lib/cognis/quota";
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
@@ -90,8 +91,24 @@ function toPrismaResponseUpdateData(
 
 export async function createResponse(payload: LegacyResponsePayload) {
   try {
+    const data = toPrismaResponseCreateData(payload);
+
+    // Server-side plan-quota gate (Gate 1 defect 8 / M9). The primary block
+    // is /api/start-interview (no session is provisioned at the limit); this
+    // is defense-in-depth because createResponse is a Server Action that
+    // "use client" contexts call directly.
+    const quota = await checkInterviewResponseQuota(data.interviewId ?? null);
+    if (!quota.allowed) {
+      logger.warn(
+        `createResponse blocked by quota: interview=${data.interviewId} ` +
+          `responses=${quota.responsesCount}/${quota.allowedResponsesCount}`,
+      );
+
+      return { error: quota.code };
+    }
+
     const row = await prisma.response.create({
-      data: toPrismaResponseCreateData(payload),
+      data,
       select: { id: true },
     });
 

@@ -20,6 +20,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 import { POST } from "@/app/api/voice-webhook/route";
+import { logger } from "@/lib/logger";
 
 const SECRET = "voice-bot-shared-secret-under-test";
 
@@ -97,5 +98,54 @@ describe("voice-webhook POST signature verification", () => {
     vi.stubEnv("VOICE_BOT_SHARED_SECRET", "");
     const res = await POST(makeRequest(VALID_PAYLOAD, sign(VALID_PAYLOAD)));
     expect(res.status).toBe(500);
+  });
+});
+
+describe("voice-webhook Bridge forwarding contract", () => {
+  const BRIDGE_SECRET = "foloup-admin-shared-secret-under-test";
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.stubEnv("VOICE_BOT_SHARED_SECRET", SECRET);
+    vi.stubEnv("BRIDGE_PUBLIC_URL", "https://bridge.test/");
+    vi.stubEnv("FOLOUP_ADMIN_SHARED_SECRET", BRIDGE_SECRET);
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockReset().mockResolvedValue({ ok: true, status: 200 });
+    responseCreate.mockClear();
+    vi.mocked(logger.error).mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("posts to /hire/webhook (no /v1 prefix) with a sha256= X-Cognis-Signature", async () => {
+    const res = await POST(makeRequest(VALID_PAYLOAD, sign(VALID_PAYLOAD)));
+    expect(res.status).toBe(200);
+
+    // Forwarding is fire-and-forget; wait for the mocked fetch to land.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://bridge.test/hire/webhook");
+
+    // Signature must be HMAC-SHA256 of the exact forwarded bytes with the
+    // Bridge-side secret, in Bridge's preferred `sha256=<hex>` form.
+    const expected = crypto
+      .createHmac("sha256", BRIDGE_SECRET)
+      .update(init.body as Buffer)
+      .digest("hex");
+    expect(init.headers["X-Cognis-Signature"]).toBe(`sha256=${expected}`);
+    expect((init.body as Buffer).toString("utf8")).toBe(VALID_PAYLOAD);
+  });
+
+  it("logs at error level with the status when Bridge rejects the forward", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 401 });
+    const res = await POST(makeRequest(VALID_PAYLOAD, sign(VALID_PAYLOAD)));
+    expect(res.status).toBe(200); // upstream sidecar still acked
+
+    await vi.waitFor(() =>
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("401")),
+    );
   });
 });

@@ -260,7 +260,18 @@ function Call({ interview }: InterviewProps) {
       });
     } catch (err) {
       console.error("Failed to start interview:", err);
-      toast.error("Could not start the interview — please try again");
+      // Server-side quota gate returns a typed 403 (Gate 1 defect 8 / M9) —
+      // give the candidate a quota-specific message instead of a retry hint.
+      if (
+        axios.isAxiosError(err) &&
+        (err.response?.data as { code?: string } | undefined)?.code === "QUOTA_EXCEEDED"
+      ) {
+        toast.error(
+          "This interview is no longer accepting responses — please contact the hiring team",
+        );
+      } else {
+        toast.error("Could not start the interview — please try again");
+      }
       setIsEnded(true);
     } finally {
       setLoading(false);

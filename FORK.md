@@ -46,6 +46,26 @@ Keep in fork (do NOT upstream):
 - Cognis-specific multi-tenant primitives, billing meters, audit integration
 - Replacement of FoloUp's direct OpenAI/Retell calls with `@cognis/llm-client` → llm.cognisai.com proxy
 
+## Upstream-file edits (justification log)
+
+Gate 1 defect 8 / M9 — server-side plan-quota enforcement (upstream only checks
+the free-plan response quota client-side on dashboard load):
+
+- `src/services/responses.service.ts` — `createResponse` now consults
+  `src/lib/cognis/quota.ts` (additive Cognis layer) and returns a typed
+  `{ error: "QUOTA_EXCEEDED" }` instead of inserting when the org is at its
+  limit. Defense-in-depth: the function is a Server Action callable directly
+  from the browser. (File was already Cognis-rewritten for Prisma.)
+- `src/components/call/index.tsx` — catch block around `/api/start-interview`
+  surfaces the typed 403 `QUOTA_EXCEEDED` with a quota-specific toast instead
+  of the generic retry message. (File was already Cognis-rewritten for
+  Pipecat.)
+
+The primary gate lives in Cognis-added files: `src/lib/cognis/quota.ts` and
+`src/app/api/start-interview/route.ts` (403 + `code: "QUOTA_EXCEEDED"` before
+any voice-bot session is provisioned). Do NOT upstream — quota semantics are
+tied to Cognis billing.
+
 ## References
 
 - Fork-ops doctrine: `cognis-platform/docs/specs/fork-ops.md`
