@@ -17,6 +17,26 @@ module.exports = {
     },
     extend: {
       colors: {
+        // Cognis brand sweep (theming spec §5.3, gate2 item 14): the app's
+        // accent is ~84 hardcoded `indigo-*` utility classes across 27
+        // upstream files, so the scale is remapped here (config layer) instead
+        // of recoloring every file. Values come from @cognis/design-tokens
+        // (cognis-platform/packages/design-tokens/tokens.json); the fork can't
+        // import the package (yarn/standalone repo), so commented literals are
+        // the sanctioned brand-sweep mechanism. Unlisted shades keep Tailwind
+        // defaults (only 100/200/300/400/500/600/800 are used in src/).
+        // NOTE (gate2 14b): 500/600 invert Tailwind's usual lightness order —
+        // hover:indigo-500 is now DARKER than indigo-600 (Ordina hover
+        // darkens). Flagged for visual hover/disabled-state review.
+        indigo: {
+          100: "#e6f5ff", // token: color.brand.primary-tint
+          200: "#cce9ff", // token: color.brand.primary-tint-2
+          300: "#9ac9e2", // token: color.brand.soft-blue
+          400: "#9ac9e2", // token: color.brand.soft-blue
+          500: "#0087e6", // token: color.brand.primary-hover
+          600: "#0099ff", // token: color.brand.primary
+          800: "#006092", // token: color.brand.primary-dark
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

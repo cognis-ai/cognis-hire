@@ -66,6 +66,44 @@ The primary gate lives in Cognis-added files: `src/lib/cognis/quota.ts` and
 any voice-bot session is provisioned). Do NOT upstream — quota semantics are
 tied to Cognis billing.
 
+Phase 4 theming (spec `cognis-platform/docs/design/theming/cognis-hire.md`,
+gate2 `cognis-platform/docs/design/gate2/cognis-hire-verification.md`) — all
+Cognis-branded, keep per fork-ops upstream-PR table; commit prefix `fork:`:
+
+- `public/browser-client-icon.ico` — binary content swap (§5.1): upstream
+  FoloUp favicon replaced by the Cognis "C" mark on `color.brand.primary`
+  `#0099ff`. Filename kept ⇒ zero code edits. Rebase resolution: always
+  `ours` (`git checkout --ours public/*.ico`). Guarded by the byte-hash test
+  in `cognis/e2e/tests/branding.spec.ts`.
+- `public/browser-user-icon.ico` — same swap (§5.2), candidate-facing, Cognis
+  "C" mark on `color.brand.navy` `#083247`. Same rebase rule + hash guard.
+- `tailwind.config.ts` — `theme.extend.colors.indigo` remap (§5.3): the only
+  config-layer path to recolor ~84 hardcoded `indigo-*` classes across 27
+  upstream files. Every hex carries a `// token: color.brand.*` provenance
+  comment (tokens: `cognis-platform/packages/design-tokens/tokens.json`).
+  NOTE: 500/600 invert Tailwind's lightness convention (hover darkens) —
+  pending visual hover/disabled-state review (gate2 item 14b).
+- `.env.example` — upstream-origin file (gate2 item 9 reclassified it
+  `isUpstreamFile:true`; it was already diverged +21/−5 by prior `wire:`
+  work): appended `NEXT_PUBLIC_BRAND_TAGLINE`, `NEXT_PUBLIC_BRAND_SUPPORT_EMAIL`,
+  `NEXT_PUBLIC_BRAND_MARKETING_URL` + OG-PNG repoint note to the
+  Cognis-added brand block. Rebase conflict = union; trivial.
+
+Done in the same change-set (gate2 item 14d): `NEXT_PUBLIC_BRAND_PRIMARY`
+default and `public/manifest.json` `theme_color` flipped `#4F46E5` → `#0099ff`
+(`color.brand.primary`; manifest JSON cannot carry comments — provenance is
+this entry). Cognis-owned files (no ledger impact): `src/lib/cognis-brand.ts`
+(env-driven `marketingUrl`), `public/manifest.json` (PWA icons),
+`Dockerfile.cognis` (brand build args), `public/brand-assets/*` (asset pack —
+regeneration + provenance in `cognis/brand-src/generate_brand_assets.py`;
+logo SVGs are the fleet-canonical `CognisAi.` outline copied from
+cognis-support), `cognis/e2e/tests/branding.spec.ts` (asset/manifest/hash
+gates).
+
+Upstream-file edit count for theming: 3 new (2 binary + 1 config block) + the
+`.env.example` append on an already-diverged file. Spec §10's "12 total" is
+13 with the `.env.example` reclassification (gate2 verdict condition 1).
+
 ## References
 
 - Fork-ops doctrine: `cognis-platform/docs/specs/fork-ops.md`

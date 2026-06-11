@@ -2,9 +2,10 @@
 // deployment (e.g. white-label customers) without forking code paths.
 //
 // Defaults assume the Cognis Hire production brand. Override via
-// NEXT_PUBLIC_BRAND_* env vars when deploying. SVG assets land in a
-// follow-up `brand:` commit (Phase 2 W8.6); for now the paths point at
-// /brand-assets/ stubs that 404 cleanly until design ships.
+// NEXT_PUBLIC_BRAND_* env vars when deploying. The default asset paths are
+// shipped in public/brand-assets/ (see cognis/brand-src/ for provenance +
+// regeneration). For OG scrapers (Slack/LinkedIn/X don't render SVG) point
+// NEXT_PUBLIC_BRAND_THUMBNAIL_URL at /brand-assets/cognis-og.png (1200x630).
 
 // `??` only catches null/undefined — but Next.js inlines `NEXT_PUBLIC_*` from
 // .env files as literal strings, so an unset key like `NEXT_PUBLIC_BRAND_NAME=`
@@ -24,10 +25,14 @@ export const COGNIS_BRAND = {
     process.env.NEXT_PUBLIC_BRAND_THUMBNAIL_URL,
     "/brand-assets/cognis-thumbnail.svg",
   ),
-  // Default brand primary placeholder — replace with the real hex when the
-  // design system lands (cognis-landing page is currently the source of truth).
-  primaryColor: envOr(process.env.NEXT_PUBLIC_BRAND_PRIMARY, "#4F46E5"),
-  marketingUrl: "https://cognisai.com",
+  // Ordina brand sweep (gate2 item 14d): flipped from the legacy Tailwind
+  // indigo-600 #4F46E5 in the SAME change-set as the tailwind.config.ts
+  // `indigo` remap and the manifest.json theme_color.
+  // token: color.brand.primary (cognis-platform/packages/design-tokens/tokens.json)
+  primaryColor: envOr(process.env.NEXT_PUBLIC_BRAND_PRIMARY, "#0099ff"),
+  // White-label hook (spec §4.4): without the override, customer deployments
+  // would footer-link to cognisai.com from the candidate call page.
+  marketingUrl: envOr(process.env.NEXT_PUBLIC_BRAND_MARKETING_URL, "https://cognisai.com"),
   // Customer-facing tagline. Matches Cognis Hire positioning in
   // phase-2-hire.md and public/manifest.json description.
   tagline: envOr(
