@@ -1,3 +1,7 @@
+# DEPRECATED ⚰️
+
+Retired product. Cognis = Voice / Chat / Brain / Security. Recruiting is now a vertical across those; trading is dropped.
+
 [![GitHub stars](https://img.shields.io/github/stars/FoloUp/FoloUp?style=social)](https://github.com/FoloUp/FoloUp/stargazers)
 ![License](https://img.shields.io/github/license/foloup/foloup)
 [![Twitter Follow](https://img.shields.io/twitter/follow/SuveenE?style=social)](https://x.com/SuveenE)
