@@ -9,6 +9,8 @@
 
 import { logger } from "@/lib/logger";
 import { prisma } from "@/lib/prisma";
+import { generateInterviewAnalytics } from "@/services/analytics.service";
+import { updateResponse } from "@/services/responses.service";
 import type { Prisma } from "@prisma/client";
 import crypto from "node:crypto";
 import { type NextRequest, NextResponse } from "next/server";
@@ -25,6 +27,9 @@ const VoiceWebhookSchema = z.object({
   session_id: z.string().min(1),
   transcript: z.array(TranscriptItemSchema).default([]),
   duration_seconds: z.number().nonnegative(),
+  // Presigned GET URL for the interview recording (voice-bot uploads to private
+  // storage). Optional: absent when recording is disabled or upload failed.
+  recording_url: z.string().url().optional(),
   metadata: z
     .object({
       interview_id: z.string().optional(),
@@ -38,8 +43,43 @@ const VoiceWebhookSchema = z.object({
 function constantTimeEqual(a: string, b: string): boolean {
   const aBuf = Buffer.from(a, "hex");
   const bBuf = Buffer.from(b, "hex");
-  if (aBuf.length !== bBuf.length) return false;
+  if (aBuf.length !== bBuf.length) {
+    return false;
+  }
   return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+// Post-interview analytics: generate sentiment/summary from the transcript and
+// persist it so the candidate/dashboard views render feedback instead of blanks.
+// Mirrors the fire-and-forget pattern below — must never block the sidecar's
+// webhook response. `generateInterviewAnalytics` is idempotent (returns early if
+// analytics already exist for this call), so a sidecar retry can neither re-bill
+// the LLM nor clobber a prior result.
+async function generateAndStoreAnalytics(
+  sessionId: string,
+  interviewId: string,
+  transcript: { role: string; content: string }[],
+): Promise<void> {
+  try {
+    // The analytics prompt expects a flat transcript string; the webhook carries
+    // it as role-tagged turns, so flatten before handing it to the LLM.
+    const transcriptText = transcript.map((t) => `${t.role}: ${t.content}`).join("\n");
+    const result = await generateInterviewAnalytics({
+      callId: sessionId,
+      interviewId,
+      transcript: transcriptText,
+    });
+    if ("analytics" in result && result.analytics) {
+      await updateResponse({ analytics: result.analytics, is_analysed: true }, sessionId);
+      logger.info(`analytics stored for session=${sessionId}`);
+    } else {
+      logger.warn(`analytics generation returned no result for session=${sessionId}`);
+    }
+  } catch (err) {
+    logger.error(
+      `analytics generation failed for ${sessionId}: ${err instanceof Error ? err.message : "?"}`,
+    );
+  }
 }
 
 async function forwardToBridge(payload: unknown, rawBytes: Buffer): Promise<void> {
@@ -99,7 +139,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
-  let parsed;
+  let parsed: z.infer<typeof VoiceWebhookSchema>;
   try {
     parsed = VoiceWebhookSchema.parse(JSON.parse(rawBytes.toString("utf8")));
   } catch (err) {
@@ -124,6 +164,7 @@ export async function POST(req: NextRequest) {
       // structurally identical (object of JSON-safe primitives).
       const details = {
         transcript: parsed.transcript,
+        recording_url: parsed.recording_url ?? null,
         metadata: parsed.metadata ?? {},
       } as unknown as Prisma.InputJsonValue;
 
@@ -136,6 +177,13 @@ export async function POST(req: NextRequest) {
           isEnded: true,
         },
       });
+
+      // Fire-and-forget post-interview analytics (sentiment + summary). Async so
+      // we return 200 to the sidecar fast (2026 webhook best-practice: never
+      // block on downstream LLM work); idempotent so sidecar retries are safe.
+      if (parsed.transcript.length > 0) {
+        void generateAndStoreAnalytics(parsed.session_id, interviewId, parsed.transcript);
+      }
     } catch (err) {
       // Likely an FK violation if interview was deleted — log and continue.
       logger.warn(

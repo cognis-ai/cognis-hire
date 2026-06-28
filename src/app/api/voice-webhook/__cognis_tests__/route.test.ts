@@ -14,6 +14,18 @@ vi.mock("@/lib/prisma", () => ({
   prisma: { response: { create: responseCreate } },
 }));
 
+// Mock the post-interview analytics path so tests stay hermetic (no LLM, no DB).
+const { generateAnalytics, updateResponseMock } = vi.hoisted(() => ({
+  generateAnalytics: vi.fn(async () => ({ analytics: { overallScore: 88 }, status: 200 })),
+  updateResponseMock: vi.fn(async () => ({})),
+}));
+vi.mock("@/services/analytics.service", () => ({
+  generateInterviewAnalytics: generateAnalytics,
+}));
+vi.mock("@/services/responses.service", () => ({
+  updateResponse: updateResponseMock,
+}));
+
 // Keep logger quiet but real-ish.
 vi.mock("@/lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -147,5 +159,93 @@ describe("voice-webhook Bridge forwarding contract", () => {
     await vi.waitFor(() =>
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("401")),
     );
+  });
+});
+
+describe("voice-webhook post-interview analytics trigger", () => {
+  const PAYLOAD_WITH_TRANSCRIPT = JSON.stringify({
+    event: "interview_completed",
+    session_id: "sess-789",
+    transcript: [
+      { role: "assistant", content: "Tell me about a hard bug." },
+      { role: "user", content: "I once chased a race condition for two days." },
+    ],
+    duration_seconds: 120,
+    metadata: { interview_id: "int-7" },
+  });
+
+  beforeEach(() => {
+    vi.stubEnv("VOICE_BOT_SHARED_SECRET", SECRET);
+    vi.stubEnv("BRIDGE_PUBLIC_URL", "");
+    vi.stubEnv("FOLOUP_ADMIN_SHARED_SECRET", "");
+    responseCreate.mockClear();
+    generateAnalytics.mockClear();
+    updateResponseMock.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("generates analytics from the transcript and persists them (is_analysed=true)", async () => {
+    const res = await POST(makeRequest(PAYLOAD_WITH_TRANSCRIPT, sign(PAYLOAD_WITH_TRANSCRIPT)));
+    expect(res.status).toBe(200);
+
+    // Analytics is fire-and-forget; wait for the async chain to settle.
+    await vi.waitFor(() => expect(generateAnalytics).toHaveBeenCalledTimes(1));
+
+    // Called with the flattened "role: content" transcript and the right ids.
+    expect(generateAnalytics).toHaveBeenCalledWith({
+      callId: "sess-789",
+      interviewId: "int-7",
+      transcript:
+        "assistant: Tell me about a hard bug.\nuser: I once chased a race condition for two days.",
+    });
+
+    // Result persisted back onto the response row, keyed by the voice session id.
+    await vi.waitFor(() => expect(updateResponseMock).toHaveBeenCalledTimes(1));
+    expect(updateResponseMock).toHaveBeenCalledWith(
+      { analytics: { overallScore: 88 }, is_analysed: true },
+      "sess-789",
+    );
+  });
+
+  it("does NOT trigger analytics when the transcript is empty", async () => {
+    // VALID_PAYLOAD has transcript: [] — nothing to analyse.
+    const res = await POST(makeRequest(VALID_PAYLOAD, sign(VALID_PAYLOAD)));
+    expect(res.status).toBe(200);
+    expect(responseCreate).toHaveBeenCalledTimes(1);
+    expect(generateAnalytics).not.toHaveBeenCalled();
+    expect(updateResponseMock).not.toHaveBeenCalled();
+  });
+
+  it("persists the recording_url onto the response details when present", async () => {
+    const payload = JSON.stringify({
+      event: "interview_completed",
+      session_id: "sess-rec-1",
+      transcript: [{ role: "user", content: "hi" }],
+      duration_seconds: 30,
+      recording_url: "http://localhost:9000/hire-recordings/interviews/sess-rec-1.wav?X-Amz-Signature=abc",
+      metadata: { interview_id: "int-9" },
+    });
+    const res = await POST(makeRequest(payload, sign(payload)));
+    expect(res.status).toBe(200);
+    expect(responseCreate).toHaveBeenCalledTimes(1);
+
+    const createArg = responseCreate.mock.calls[0][0] as {
+      data: { details: { recording_url?: string } };
+    };
+    expect(createArg.data.details.recording_url).toBe(
+      "http://localhost:9000/hire-recordings/interviews/sess-rec-1.wav?X-Amz-Signature=abc",
+    );
+  });
+
+  it("stores recording_url as null when the webhook omits it", async () => {
+    const res = await POST(makeRequest(PAYLOAD_WITH_TRANSCRIPT, sign(PAYLOAD_WITH_TRANSCRIPT)));
+    expect(res.status).toBe(200);
+    const createArg = responseCreate.mock.calls[0][0] as {
+      data: { details: { recording_url?: string | null } };
+    };
+    expect(createArg.data.details.recording_url).toBeNull();
   });
 });
